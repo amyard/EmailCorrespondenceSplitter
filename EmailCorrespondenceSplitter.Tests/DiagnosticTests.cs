@@ -1,4 +1,5 @@
 using EmailCorrespondenceSplitter.Services;
+using EmailCorrespondenceSplitter.Models;
 using System.Text;
 using System.Text.RegularExpressions;
 using Xunit.Abstractions;
@@ -128,6 +129,116 @@ public class DiagnosticTests
                 }
                 _output.WriteLine($"  Siblings until next HR (or end): {siblingCount}");
             }
+        }
+    }
+
+    [Fact]
+    public async Task InspectHtmlStructureAroundHR()
+    {
+        // Arrange
+        var emailParser = new MsgEmailParser();
+        var testEmailPath = "Assets/em6.msg";
+
+        // Act
+        var email = await emailParser.ParseAsync(testEmailPath);
+        
+        // Parse HTML
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        var hrs = doc.DocumentNode.SelectNodes("//hr");
+        _output.WriteLine($"Found {hrs?.Count ?? 0} <hr> tags\n");
+        
+        if (hrs != null && hrs.Count > 0)
+        {
+            // Inspect first HR in detail
+            var firstHr = hrs[0];
+            _output.WriteLine("=== FIRST HR DETAILED INSPECTION ===");
+            _output.WriteLine($"HR Parent: {firstHr.ParentNode?.Name} (id={firstHr.ParentNode?.Id}, class={firstHr.ParentNode?.GetAttributeValue("class", "none")})");
+            
+            // Check parent's siblings
+            _output.WriteLine("\nSiblings of HR's parent:");
+            var hrParent = firstHr.ParentNode;
+            if (hrParent != null)
+            {
+                var parentSibling = hrParent.NextSibling;
+                int count = 0;
+                while (parentSibling != null && count < 10)
+                {
+                    if (parentSibling.Name == "#text" && string.IsNullOrWhiteSpace(parentSibling.InnerText))
+                    {
+                        parentSibling = parentSibling.NextSibling;
+                        continue;
+                    }
+                    
+                    _output.WriteLine($"\nSibling [{count}]: {parentSibling.Name}");
+                    _output.WriteLine($"  OuterHtml length: {parentSibling.OuterHtml?.Length}");
+                    
+                    if (parentSibling.Name == "hr" || (parentSibling.Name == "div" && parentSibling.SelectSingleNode(".//hr") != null))
+                    {
+                        _output.WriteLine("  Contains HR - this is the next separator");
+                        break;
+                    }
+                    
+                    string preview = parentSibling.OuterHtml?.Length > 300 
+                        ? parentSibling.OuterHtml.Substring(0, 300) + "..." 
+                        : parentSibling.OuterHtml ?? "";
+                    _output.WriteLine($"  Preview: {preview}");
+                    
+                    parentSibling = parentSibling.NextSibling;
+                    count++;
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public async Task DiagnoseEm6DetectionPath()
+    {
+        // Arrange
+        var emailParser = new MsgEmailParser();
+        var correspondenceDetector = new CorrespondenceDetector();
+        var testEmailPath = "Assets/em6.msg";
+
+        // Act
+        var email = await emailParser.ParseAsync(testEmailPath);
+        
+        _output.WriteLine($"Email Type: {email.EmailType}");
+        
+        // Parse HTML to check structure
+        var doc = new HtmlAgilityPack.HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Check for divRplyFwdMsg
+        var divRplyFwdMsgs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg']");
+        _output.WriteLine($"divRplyFwdMsg count: {divRplyFwdMsgs?.Count ?? 0}");
+        
+        // Check for HRs
+        var allHrs = doc.DocumentNode.SelectNodes("//hr");
+        _output.WriteLine($"Total HR tags: {allHrs?.Count ?? 0}");
+        
+        // Check which path the detector will take
+        _output.WriteLine("\nExpected path:");
+        if (email.EmailType == EmailType.Outlook)
+        {
+            _output.WriteLine("  -> DetectOutlookCorrespondences");
+            if (divRplyFwdMsgs != null && divRplyFwdMsgs.Count > 0)
+            {
+                _output.WriteLine("  -> Will redirect to DetectOutlookWebCorrespondences");
+                if (allHrs != null && allHrs.Count > 0)
+                {
+                    _output.WriteLine("  -> Will use HR-based extraction (skipOwaCheck=true)");
+                }
+            }
+        }
+        
+        // Actually extract correspondences
+        var correspondences = correspondenceDetector.DetectCorrespondences(email);
+        
+        _output.WriteLine($"\nActual correspondences extracted: {correspondences.Count}");
+        foreach (var c in correspondences)
+        {
+            _output.WriteLine($"  {c.Index}: From={c.From}, SentOn={c.SentOn}, Length={c.HtmlContent?.Length ?? 0}");
         }
     }
 }

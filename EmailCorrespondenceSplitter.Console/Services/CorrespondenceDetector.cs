@@ -123,7 +123,47 @@ public class CorrespondenceDetector
         }
         
         // Outlook uses <hr> or specific divs to separate emails
-        var separators = doc.DocumentNode.SelectNodes("//hr | //div[contains(@style, 'border-top')]");
+        // Important: Only select top-level HR tags, not nested ones within quoted content
+        // Nested HRs (inside divRplyFwdMsg, mail-editor-reference-message-container) should not split correspondences
+        var allHrs = doc.DocumentNode.SelectNodes("//hr");
+        
+        // Filter out nested HRs that are inside quoted message containers
+        List<HtmlNode>? separators = null;
+        if (allHrs != null)
+        {
+            separators = new List<HtmlNode>();
+            foreach (var hr in allHrs)
+            {
+                // Check if this HR is inside a quoted message container
+                var parent = hr.ParentNode;
+                bool isNestedInQuote = false;
+                
+                while (parent != null)
+                {
+                    // Skip HRs that are inside divRplyFwdMsg, mail-editor-reference-message-container,
+                    // or any container with these IDs in the hierarchy
+                    // These are part of the quoted content, not correspondence separators
+                    var parentId = parent.GetAttributeValue("id", "");
+                    var parentClass = parent.GetAttributeValue("class", "");
+                    
+                    if (parentId == "divRplyFwdMsg" || 
+                        parentId == "mail-editor-reference-message-container" ||
+                        parentId == "appendonsend" ||
+                        parentClass.Contains("gmail_quote") ||
+                        parent.Name == "blockquote")
+                    {
+                        isNestedInQuote = true;
+                        break;
+                    }
+                    parent = parent.ParentNode;
+                }
+                
+                if (!isNestedInQuote)
+                {
+                    separators.Add(hr);
+                }
+            }
+        }
         
         if (separators != null && separators.Count > 0)
         {
@@ -293,7 +333,22 @@ public class CorrespondenceDetector
         var doc = new HtmlDocument();
         doc.LoadHtml(email.HtmlBody);
         
-        // OWA uses specific div structures
+        // OWA uses specific div structures, but in MSG files saved from Outlook,
+        // the divRplyFwdMsg might be mixed with regular Outlook HR separators
+        // Check for HR separators first
+        var separators = doc.DocumentNode.SelectNodes("//hr");
+        
+        if (separators != null && separators.Count > 0)
+        {
+            // This is a mixed format - has both OWA divs and HR separators
+            // Use the HR-based extraction which handles the structure properly
+            // BUT: divRplyFwdMsg sections should NOT be treated as separate correspondences
+            // They are email headers that are part of the correspondence content
+            return DetectOutlookCorrespondences(email, skipOwaCheck: true);
+        }
+        
+        // Pure OWA format without HR separators - only process if divRplyFwdMsg is theONLY quoted structure
+        // If there are HR tags, those take precedence for splitting
         var quoteDivs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg' or @id='appendonsend' or contains(@class, 'BodyFragment')]");
         
         if (quoteDivs != null && quoteDivs.Count > 0)
@@ -318,6 +373,7 @@ public class CorrespondenceDetector
             }
             
             // Process each quoted div as a separate correspondence
+            // NOTE: In the presence of HR tags, this code path should not be reached
             for (int i = 0; i < quoteDivs.Count; i++)
             {
                 var quotedContent = quoteDivs[i].InnerHtml;
@@ -869,19 +925,30 @@ public class CorrespondenceDetector
     
     /// <summary>
     /// Extract HTML content between two nodes (or after a node if endNode is null)
+    /// This handles the Outlook structure where HR tags are in their own divs
     /// </summary>
-    /// <param name="startNode">The node after which to start extraction</param>
-    /// <param name="endNode">The node before which to stop extraction (or null to go to the end)</param>
+    /// <param name="startNode">The HR node after which to start extraction</param>
+    /// <param name="endNode">The HR node before which to stop extraction (or null to go to the end)</param>
     /// <returns>HTML content between the two nodes</returns>
     private string ExtractContentBetweenNodes(HtmlNode startNode, HtmlNode? endNode)
     {
         var content = new System.Text.StringBuilder();
-        var currentNode = startNode.NextSibling;
+        
+        // In Outlook emails, the HR is typically in its own div/container
+        // We need to get the parent of the HR and then collect following siblings
+        var startParent = startNode.ParentNode;
+        if (startParent == null)
+            return string.Empty;
+        
+        var endParent = endNode?.ParentNode;
+        
+        // Start from the sibling after the HR's parent container
+        var currentNode = startParent.NextSibling;
         
         while (currentNode != null)
         {
-            // Stop if we reached the end node
-            if (endNode != null && currentNode == endNode)
+            // Stop if we've reached the end marker's parent
+            if (endParent != null && currentNode == endParent)
                 break;
             
             // Skip pure whitespace text nodes
@@ -891,7 +958,8 @@ public class CorrespondenceDetector
                 currentNode = currentNode.NextSibling;
                 continue;
             }
-                
+            
+            // Add this node's content
             content.Append(currentNode.OuterHtml);
             currentNode = currentNode.NextSibling;
         }

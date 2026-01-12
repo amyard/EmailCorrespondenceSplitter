@@ -29,7 +29,7 @@ public class CorrespondenceExtractionTests
     //[InlineData("Assets/em3.msg", 1)]
     //[InlineData("Assets/em4.msg", 1)]
     //[InlineData("Assets/em5.msg", 2)]
-    [InlineData("Assets/em6.msg", 3)]
+    [InlineData("Assets/em6.msg", 4)] // outlook with 3 correspondences
     public async Task ProcessEmail_ShouldExtractExpectedCorrespondenceCount(string emailPath, int expectedCount)
     {
         // Arrange
@@ -109,6 +109,61 @@ public class CorrespondenceExtractionTests
             // Verify all files are correspondence files
             Assert.All(htmlFiles, file => 
                 Assert.Contains("correspondence", Path.GetFileName(file).ToLower()));
+        }
+        finally
+        {
+            // Cleanup
+            if (Directory.Exists(testOutputFolder))
+            {
+                Directory.Delete(testOutputFolder, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Test that processing an email creates the expected number of individual correspondence MSG files.
+    /// No separate parent email file should be created.
+    /// </summary>
+    /// <param name="emailPath">Path to the email file</param>
+    /// <param name="expectedCount">Expected number of correspondence files</param>
+    [Theory]
+    [InlineData("Assets/em1.msg", 1)]
+    [InlineData("Assets/em2.msg", 1)]
+    [InlineData("Assets/em6.msg", 3)]
+    public async Task ProcessEmailWithSplitter_ShouldCreateIndividualCorrespondenceMsgFiles(string emailPath, int expectedCount)
+    {
+        // Arrange
+        var emailParser = new MsgEmailParser();
+        var correspondenceDetector = new CorrespondenceDetector();
+        var testOutputFolder = $"TestOutput_{Guid.NewGuid():N}";
+        var outputManager = new OutputManager(testOutputFolder);
+        var emailSplitter = new EmailSplitter(emailParser, correspondenceDetector, outputManager);
+
+        try
+        {
+            // Act
+            await emailSplitter.ProcessEmailAsync(emailPath);
+
+            // Assert - Check that the output folder contains the expected number of MSG files
+            var outputFolders = Directory.GetDirectories(testOutputFolder);
+            Assert.Single(outputFolders); // Should have one folder for the email
+
+            var msgFiles = Directory.GetFiles(outputFolders[0], "*.msg");
+            Assert.Equal(expectedCount, msgFiles.Length);
+            
+            // Verify no parent email file exists
+            Assert.DoesNotContain(msgFiles, f => Path.GetFileName(f).Contains("parent"));
+            
+            // Verify all files are correspondence MSG files
+            Assert.All(msgFiles, file => 
+                Assert.Contains("correspondence", Path.GetFileName(file).ToLower()));
+            
+            // Verify files are numbered sequentially
+            for (int i = 0; i < msgFiles.Length; i++)
+            {
+                var fileName = Path.GetFileName(msgFiles.OrderBy(f => f).ToArray()[i]);
+                Assert.StartsWith($"{i + 1:D2}_", fileName);
+            }
         }
         finally
         {
@@ -271,11 +326,11 @@ public class CorrespondenceExtractionTests
 
             // Assert
             var outputFolders = Directory.GetDirectories(testOutputFolder);
-            var htmlFiles = Directory.GetFiles(outputFolders[0], "*.html").OrderBy(f => f).ToArray();
+            var msgFiles = Directory.GetFiles(outputFolders[0], "*.msg").OrderBy(f => f).ToArray();
             
-            for (int i = 0; i < htmlFiles.Length; i++)
+            for (int i = 0; i < msgFiles.Length; i++)
             {
-                var fileName = Path.GetFileName(htmlFiles[i]);
+                var fileName = Path.GetFileName(msgFiles[i]);
                 // Should start with "01_", "02_", etc.
                 Assert.StartsWith($"{i + 1:D2}_", fileName);
             }

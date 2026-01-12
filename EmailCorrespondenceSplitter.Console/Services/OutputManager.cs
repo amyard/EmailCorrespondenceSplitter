@@ -1,5 +1,7 @@
 using System.Text;
+using System.Threading.Tasks;
 using EmailCorrespondenceSplitter.Models;
+using MsgKit;
 
 namespace EmailCorrespondenceSplitter.Services;
 
@@ -42,79 +44,50 @@ public class OutputManager
     }
     
     /// <summary>
-    /// Save a correspondence as an HTML file
+    /// Save a correspondence as a MSG file
     /// </summary>
-    public async Task SaveCorrespondenceAsync(Correspondence correspondence, string outputFolder, EmailType emailType)
+    public async System.Threading.Tasks.Task SaveCorrespondenceAsync(Correspondence correspondence, string outputFolder, EmailType emailType)
     {
-        var fileName = $"{(correspondence.Index + 1):D2}_correspondence_{SanitizeFileName(correspondence.From)}.html";
+        var fileName = $"{(correspondence.Index + 1):D2}_correspondence_{SanitizeFileName(correspondence.From)}.msg";
         var filePath = Path.Combine(outputFolder, fileName);
         
-        var html = GenerateEmailHtml(
-            correspondence.Subject,
-            correspondence.From,
-            correspondence.To,
-            string.Empty,
-            correspondence.SentOn,
-            correspondence.HtmlContent,
-            $"Correspondence Index: {correspondence.Index + 1} | Is Parent: {correspondence.IsParent} | Email Type: {emailType}"
-        );
-        
-        await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);
-    }
-    
-    /// <summary>
-    /// Generate a complete HTML document for an email or correspondence
-    /// </summary>
-    private string GenerateEmailHtml(string subject, string from, string to, string cc, DateTime? sentOn, string htmlBody, string metadata)
-    {
-        var sb = new StringBuilder();
-        
-        sb.AppendLine("<!DOCTYPE html>");
-        sb.AppendLine("<html>");
-        sb.AppendLine("<head>");
-        sb.AppendLine("    <meta charset=\"utf-8\">");
-        sb.AppendLine($"    <title>{EscapeHtml(subject)}</title>");
-        sb.AppendLine("    <style>");
-        sb.AppendLine("        body { font-family: Arial, sans-serif; margin: 20px; }");
-        sb.AppendLine("        .email-header { background-color: #f0f0f0; padding: 15px; border-radius: 5px; margin-bottom: 20px; }");
-        sb.AppendLine("        .email-header-field { margin: 5px 0; }");
-        sb.AppendLine("        .email-header-label { font-weight: bold; display: inline-block; width: 100px; }");
-        sb.AppendLine("        .email-metadata { color: #666; font-size: 0.9em; margin-bottom: 10px; }");
-        sb.AppendLine("        .email-body { border-top: 1px solid #ccc; padding-top: 20px; }");
-        sb.AppendLine("    </style>");
-        sb.AppendLine("</head>");
-        sb.AppendLine("<body>");
-        
-        // Email header
-        sb.AppendLine("    <div class=\"email-header\">");
-        sb.AppendLine($"        <div class=\"email-header-field\"><span class=\"email-header-label\">Subject:</span> {EscapeHtml(subject)}</div>");
-        sb.AppendLine($"        <div class=\"email-header-field\"><span class=\"email-header-label\">From:</span> {EscapeHtml(from)}</div>");
-        sb.AppendLine($"        <div class=\"email-header-field\"><span class=\"email-header-label\">To:</span> {EscapeHtml(to)}</div>");
-        
-        if (!string.IsNullOrWhiteSpace(cc))
+        await System.Threading.Tasks.Task.Run(() =>
         {
-            sb.AppendLine($"        <div class=\"email-header-field\"><span class=\"email-header-label\">Cc:</span> {EscapeHtml(cc)}</div>");
-        }
-        
-        if (sentOn.HasValue)
-        {
-            sb.AppendLine($"        <div class=\"email-header-field\"><span class=\"email-header-label\">Sent:</span> {sentOn.Value:yyyy-MM-dd HH:mm:ss}</div>");
-        }
-        
-        sb.AppendLine("    </div>");
-        
-        // Metadata
-        sb.AppendLine($"    <div class=\"email-metadata\">{EscapeHtml(metadata)}</div>");
-        
-        // Email body
-        sb.AppendLine("    <div class=\"email-body\">");
-        sb.AppendLine(htmlBody);
-        sb.AppendLine("    </div>");
-        
-        sb.AppendLine("</body>");
-        sb.AppendLine("</html>");
-        
-        return sb.ToString();
+            using var email = new Email(
+                new Sender(correspondence.From, correspondence.From),
+                correspondence.Subject
+            );
+            
+            // Add recipients
+            if (!string.IsNullOrWhiteSpace(correspondence.To))
+            {
+                var recipients = correspondence.To.Split(';', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var recipient in recipients)
+                {
+                    var cleanRecipient = recipient.Trim();
+                    email.Recipients.AddTo(cleanRecipient, cleanRecipient);
+                }
+            }
+            
+            // Set sent date
+            if (correspondence.SentOn.HasValue)
+            {
+                email.SentOn = correspondence.SentOn.Value;
+            }
+            
+            // Set body (prefer HTML, fallback to text)
+            if (!string.IsNullOrWhiteSpace(correspondence.HtmlContent))
+            {
+                email.BodyHtml = correspondence.HtmlContent;
+            }
+            else if (!string.IsNullOrWhiteSpace(correspondence.TextContent))
+            {
+                email.BodyText = correspondence.TextContent;
+            }
+            
+            // Save the MSG file
+            email.Save(filePath);
+        });
     }
     
     /// <summary>
@@ -132,21 +105,5 @@ public class OutputManager
         }
         
         return sanitized;
-    }
-    
-    /// <summary>
-    /// Escape HTML special characters
-    /// </summary>
-    private string EscapeHtml(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-            
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;")
-            .Replace("\"", "&quot;")
-            .Replace("'", "&#39;");
     }
 }
