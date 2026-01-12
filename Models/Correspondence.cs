@@ -1,0 +1,47 @@
+namespace EmailCorrespondenceSplitter.Models;
+
+/// <summary>
+/// Represents a single correspondence extracted from an email thread
+/// </summary>
+public class Correspondence
+{
+    /// <summary>
+    /// From address of this correspondence
+    /// </summary>
+    public string From { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// To address of this correspondence
+    /// </summary>
+    public string To { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Date and time this correspondence was sent
+    /// </summary>
+    public DateTime? SentOn { get; set; }
+    
+    /// <summary>
+    /// Subject of this correspondence
+    /// </summary>
+    public string Subject { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// HTML content of this correspondence
+    /// </summary>
+    public string HtmlContent { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Plain text content of this correspondence
+    /// </summary>
+    public string TextContent { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Index in the email thread (0 = most recent, higher = older)
+    /// </summary>
+    public int Index { get; set; }
+    
+    /// <summary>
+    /// Whether this is the original (parent) email
+    /// </summary>
+    public bool IsParent { get; set; }
+}
