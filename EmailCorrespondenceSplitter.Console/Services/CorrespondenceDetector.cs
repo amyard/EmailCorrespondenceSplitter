@@ -753,47 +753,158 @@ public class CorrespondenceDetector
         doc.LoadHtml(email.HtmlBody);
         
         // Apple Mail uses blockquote for quoted content
-        var blockquotes = doc.DocumentNode.SelectNodes("//blockquote[@type='cite']");
+        // Note: Blockquotes can be nested, so we need to process them carefully
+        var allBlockquotes = doc.DocumentNode.SelectNodes("//blockquote[@type='cite']");
         
-        if (blockquotes != null && blockquotes.Count > 0)
+        if (allBlockquotes != null && allBlockquotes.Count > 0)
         {
-            // First correspondence
-            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, blockquotes[0]);
-            
-            correspondences.Add(new Correspondence
+            // Get only top-level blockquotes (not nested within other blockquotes)
+            var topLevelBlockquotes = new List<HtmlNode>();
+            foreach (var blockquote in allBlockquotes)
             {
-                From = email.From,
-                To = email.To,
-                SentOn = email.SentOn,
-                Subject = email.Subject,
-                HtmlContent = mainContent,
-                TextContent = HtmlToPlainText(mainContent),
-                Index = 0,
-                IsParent = true
-            });
+                // Check if this blockquote is nested inside another blockquote
+                bool isNested = false;
+                var parent = blockquote.ParentNode;
+                while (parent != null)
+                {
+                    if (parent.Name == "blockquote" && parent.GetAttributeValue("type", "") == "cite")
+                    {
+                        isNested = true;
+                        break;
+                    }
+                    parent = parent.ParentNode;
+                }
+                
+                if (!isNested)
+                {
+                    topLevelBlockquotes.Add(blockquote);
+                }
+            }
             
-            // Process blockquotes
-            int index = 1;
-            foreach (var blockquote in blockquotes)
+            if (topLevelBlockquotes.Count > 0)
             {
-                var quotedContent = blockquote.InnerHtml;
-                var metadata = ExtractEmailMetadata(quotedContent);
+                // First correspondence - extract content before first blockquote
+                // Use ExtractAllContentBeforeSeparator to properly handle nested structures
+                var mainContentBeforeQuote = ExtractAllContentBeforeSeparator(doc, topLevelBlockquotes[0]);
+                
+                // In Apple Mail, the blockquote may contain footer/signature content from the parent
+                // correspondence before the actual quote starts. The quote typically starts with
+                // "On [date], at [time], [email] wrote:" pattern
+                var firstBlockquoteContent = topLevelBlockquotes[0].InnerHtml;
+                var prefixContent = ExtractAppleMailQuotePrefix(firstBlockquoteContent);
+                
+                // Combine main content with any prefix content from the blockquote
+                var mainContent = mainContentBeforeQuote;
+                if (!string.IsNullOrWhiteSpace(prefixContent))
+                {
+                    mainContent += prefixContent;
+                }
                 
                 correspondences.Add(new Correspondence
                 {
-                    From = metadata.From ?? "Unknown",
-                    To = metadata.To ?? email.From,
-                    SentOn = metadata.Date,
+                    From = email.From,
+                    To = email.To,
+                    SentOn = email.SentOn,
                     Subject = email.Subject,
-                    HtmlContent = quotedContent,
-                    TextContent = HtmlToPlainText(quotedContent),
-                    Index = index++,
-                    IsParent = false
+                    HtmlContent = mainContent,
+                    TextContent = HtmlToPlainText(mainContent),
+                    Index = 0,
+                    IsParent = true
                 });
+                
+                // Process each top-level blockquote - extract content before any nested blockquotes
+                int index = 1;
+                foreach (var blockquote in topLevelBlockquotes)
+                {
+                    // Find nested blockquotes within this blockquote
+                    var nestedBlockquotes = blockquote.SelectNodes(".//blockquote[@type='cite']");
+                    
+                    // Remove the prefix content (belongs to parent) and get only the quoted part
+                    var blockquoteHtml = blockquote.InnerHtml;
+                    var quotedContent = RemoveAppleMailQuotePrefix(blockquoteHtml);
+                    
+                    // If there are nested blockquotes, extract only content before them
+                    if (nestedBlockquotes != null && nestedBlockquotes.Count > 0)
+                    {
+                        var tempDoc = new HtmlDocument();
+                        tempDoc.LoadHtml(quotedContent);
+                        var firstNested = tempDoc.DocumentNode.SelectSingleNode("//blockquote[@type='cite']");
+                        if (firstNested != null)
+                        {
+                            // Extract content before nested blockquote
+                            var contentBeforeNested = ExtractAllContentBeforeSeparator(tempDoc, firstNested);
+                            
+                            // Also check if there's prefix content in the nested blockquote
+                            var nestedPrefixContent = ExtractAppleMailQuotePrefix(firstNested.InnerHtml);
+                            if (!string.IsNullOrWhiteSpace(nestedPrefixContent))
+                            {
+                                quotedContent = contentBeforeNested + nestedPrefixContent;
+                            }
+                            else
+                            {
+                                quotedContent = contentBeforeNested;
+                            }
+                        }
+                    }
+                    
+                    var metadata = ExtractEmailMetadata(quotedContent);
+                    
+                    correspondences.Add(new Correspondence
+                    {
+                        From = metadata.From ?? "Unknown",
+                        To = metadata.To ?? email.From,
+                        SentOn = metadata.Date,
+                        Subject = email.Subject,
+                        HtmlContent = quotedContent,
+                        TextContent = HtmlToPlainText(quotedContent),
+                        Index = index++,
+                        IsParent = false
+                    });
+                }
             }
         }
         
         return correspondences;
+    }
+    
+    /// <summary>
+    /// Extract the prefix content from an Apple Mail blockquote that belongs to the parent correspondence.
+    /// Apple Mail includes content before the "On [date], at [time], [email] wrote:" line that is actually
+    /// part of the previous correspondence (like footers, signatures).
+    /// </summary>
+    private string ExtractAppleMailQuotePrefix(string blockquoteContent)
+    {
+        // Pattern: "On [date], at [time], [email] wrote:"
+        // This marks the beginning of the actual quoted content
+        var quoteHeaderPattern = @"On\s+\d+\s+\w+\s+\d{4},\s+at\s+\d+:\d+,\s+.*?wrote:";
+        var match = Regex.Match(blockquoteContent, quoteHeaderPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        
+        if (match.Success)
+        {
+            // Everything before the quote header belongs to the parent correspondence
+            return blockquoteContent.Substring(0, match.Index);
+        }
+        
+        return string.Empty;
+    }
+    
+    /// <summary>
+    /// Remove the prefix content from an Apple Mail blockquote, leaving only the actual quoted email.
+    /// </summary>
+    private string RemoveAppleMailQuotePrefix(string blockquoteContent)
+    {
+        // Pattern: "On [date], at [time], [email] wrote:"
+        var quoteHeaderPattern = @"On\s+\d+\s+\w+\s+\d{4},\s+at\s+\d+:\d+,\s+.*?wrote:";
+        var match = Regex.Match(blockquoteContent, quoteHeaderPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        
+        if (match.Success)
+        {
+            // Return everything from the quote header onwards
+            return blockquoteContent.Substring(match.Index);
+        }
+        
+        // If no quote header found, return the original content
+        return blockquoteContent;
     }
     
     /// <summary>

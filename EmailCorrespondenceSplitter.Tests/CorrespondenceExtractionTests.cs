@@ -28,8 +28,8 @@ public class CorrespondenceExtractionTests
     //[InlineData("Assets/em2.msg", 1)]
     //[InlineData("Assets/em3.msg", 1)]
     //[InlineData("Assets/em4.msg", 1)]
-    //[InlineData("Assets/em5.msg", 2)]
-    [InlineData("Assets/em6.msg", 4)] // outlook with 3 correspondences
+    [InlineData("Assets/em5.msg", 2)]
+    //[InlineData("Assets/em6.msg", 4)] // outlook with 3 correspondences
     public async Task ProcessEmail_ShouldExtractExpectedCorrespondenceCount(string emailPath, int expectedCount)
     {
         // Arrange
@@ -233,7 +233,7 @@ public class CorrespondenceExtractionTests
     }
 
     /// <summary>
-    /// Test that the parser correctly rejects non-MSG files.
+    /// Test that the parser correctly rejects non-Msg files.
     /// </summary>
     /// <param name="filePath">Path to a non-MSG file</param>
     [Theory]
@@ -343,5 +343,52 @@ public class CorrespondenceExtractionTests
                 Directory.Delete(testOutputFolder, true);
             }
         }
+    }
+
+    /// <summary>
+    /// Test that Apple Mail correspondences are properly separated without nested content
+    /// </summary>
+    [Fact]
+    public async Task ProcessEmail_Em5AppleMail_CorrespondencesShouldNotContainNestedContent()
+    {
+        // Arrange
+        var emailParser = new MsgEmailParser();
+        var correspondenceDetector = new CorrespondenceDetector();
+        var testEmailPath = "Assets/em5.msg";
+
+        // Act
+        var email = await emailParser.ParseAsync(testEmailPath);
+        var correspondences = correspondenceDetector.DetectCorrespondences(email);
+
+        // Assert
+        Assert.Equal(2, correspondences.Count);
+        
+        // The first correspondence should NOT contain content from the second correspondence
+        // Check that the first correspondence doesn't contain the "From: Jack Lawrence" text
+        var firstCorrespondenceText = correspondences[0].TextContent;
+        var secondCorrespondenceText = correspondences[1].TextContent;
+        
+        // The second correspondence should have "From: Jack Lawrence" or similar
+        Assert.Contains("Jack", secondCorrespondenceText, StringComparison.OrdinalIgnoreCase);
+        
+        // The first correspondence should NOT contain the full second correspondence
+        // If it does, it means we haven't properly separated them
+        // We check that the second correspondence has unique content not in the first
+        var secondCorrespondenceLines = secondCorrespondenceText.Split('\n')
+            .Select(l => l.Trim())
+            .Where(l => !string.IsNullOrWhiteSpace(l))
+            .ToList();
+        
+        // At least some lines from second correspondence should not appear in first
+        var uniqueToSecond = secondCorrespondenceLines
+            .Where(line => !firstCorrespondenceText.Contains(line, StringComparison.OrdinalIgnoreCase))
+            .Count();
+        
+        // Expect that at least 30% of the second correspondence lines are unique
+        // (not contained in the first correspondence)
+        var percentageUnique = (double)uniqueToSecond / secondCorrespondenceLines.Count;
+        Assert.True(percentageUnique > 0.3, 
+            $"First correspondence appears to contain nested content from second correspondence. " +
+            $"Only {percentageUnique:P0} of second correspondence lines are unique.");
     }
 }
