@@ -1,9 +1,8 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.14.36705.20 d17.14
-MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter", "EmailCorrespondenceSplitter.csproj", "{AF71DBAA-9087-4761-8D36-109C9136DFF3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter.Console", "EmailCorrespondenceSplitter.Console\EmailCorrespondenceSplitter.Console.csproj", "{DD5B6C7E-27FC-4D33-B1D0-C3BFD3612B96}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter.Tests", "EmailCorrespondenceSplitter.Tests\EmailCorrespondenceSplitter.Tests.csproj", "{E2BF6961-9F18-4003-8C86-3BECDB2DE842}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,15 +10,13 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{AF71DBAA-9087-4761-8D36-109C9136DFF3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{AF71DBAA-9087-4761-8D36-109C9136DFF3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{AF71DBAA-9087-4761-8D36-109C9136DFF3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{AF71DBAA-9087-4761-8D36-109C9136DFF3}.Release|Any CPU.Build.0 = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
-	EndGlobalSection
-	GlobalSection(ExtensibilityGlobals) = postSolution
-		SolutionGuid = {7FD89DF9-C106-44EF-AE5D-F8D28A0B7AD5}
+		{DD5B6C7E-27FC-4D33-B1D0-C3BFD3612B96}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{DD5B6C7E-27FC-4D33-B1D0-C3BFD3612B96}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{DD5B6C7E-27FC-4D33-B1D0-C3BFD3612B96}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{DD5B6C7E-27FC-4D33-B1D0-C3BFD3612B96}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
