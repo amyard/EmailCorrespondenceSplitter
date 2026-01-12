@@ -105,37 +105,52 @@ public class CorrespondenceDetector
     /// <summary>
     /// Detect Outlook correspondences (uses horizontal lines and specific formatting)
     /// </summary>
-    private List<Correspondence> DetectOutlookCorrespondences(EmailMessage email)
+    private List<Correspondence> DetectOutlookCorrespondences(EmailMessage email, bool skipOwaCheck = false)
     {
         var correspondences = new List<Correspondence>();
         var doc = new HtmlDocument();
         doc.LoadHtml(email.HtmlBody);
+        
+        // Check if this is actually OWA format (HR followed by divRplyFwdMsg)
+        if (!skipOwaCheck)
+        {
+            var divRplyFwdMsgs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg']");
+            if (divRplyFwdMsgs != null && divRplyFwdMsgs.Count > 0)
+            {
+                // This is OWA format, use OWA detection
+                return DetectOutlookWebCorrespondences(email);
+            }
+        }
         
         // Outlook uses <hr> or specific divs to separate emails
         var separators = doc.DocumentNode.SelectNodes("//hr | //div[contains(@style, 'border-top')]");
         
         if (separators != null && separators.Count > 0)
         {
-            // First correspondence
-            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, separators[0]);
+            // Extract content before first separator as main correspondence
+            var firstSeparator = separators[0];
+            var mainContent = ExtractAllContentBeforeSeparator(doc, firstSeparator);
             
-            correspondences.Add(new Correspondence
+            if (!string.IsNullOrWhiteSpace(mainContent))
             {
-                From = email.From,
-                To = email.To,
-                SentOn = email.SentOn,
-                Subject = email.Subject,
-                HtmlContent = mainContent,
-                TextContent = HtmlToPlainText(mainContent),
-                Index = 0,
-                IsParent = true
-            });
+                correspondences.Add(new Correspondence
+                {
+                    From = email.From,
+                    To = email.To,
+                    SentOn = email.SentOn,
+                    Subject = email.Subject,
+                    HtmlContent = mainContent,
+                    TextContent = HtmlToPlainText(mainContent),
+                    Index = 0,
+                    IsParent = true
+                });
+            }
             
-            // Extract content between separators
+            // Extract content between and after separators
             for (int i = 0; i < separators.Count; i++)
             {
-                var nextNode = separators[i].NextSibling;
-                var quotedContent = ExtractContentAfterNode(separators[i]);
+                HtmlNode? nextSeparator = i < separators.Count - 1 ? separators[i + 1] : null;
+                var quotedContent = ExtractContentBetweenNodes(separators[i], nextSeparator);
                 
                 if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
@@ -149,7 +164,7 @@ public class CorrespondenceDetector
                         Subject = email.Subject,
                         HtmlContent = quotedContent,
                         TextContent = HtmlToPlainText(quotedContent),
-                        Index = i + 1,
+                        Index = correspondences.Count,
                         IsParent = false
                     });
                 }
@@ -168,6 +183,75 @@ public class CorrespondenceDetector
         }
         
         return correspondences;
+    }
+    
+    /// <summary>
+    /// Extract all content before a separator node by walking up the tree
+    /// </summary>
+    private string ExtractAllContentBeforeSeparator(HtmlDocument doc, HtmlNode separator)
+    {
+        var content = new System.Text.StringBuilder();
+        
+        // Walk through all top-level nodes until we find the one containing the separator
+        foreach (var topNode in doc.DocumentNode.ChildNodes)
+        {
+            if (ContainsNode(topNode, separator))
+            {
+                // Extract content from this node up to the separator
+                ExtractBeforeNodeInSubtree(topNode, separator, content);
+                break;
+            }
+            else
+            {
+                // This entire node is before the separator
+                content.Append(topNode.OuterHtml);
+            }
+        }
+        
+        return content.ToString();
+    }
+    
+    /// <summary>
+    /// Check if a node contains another node in its subtree
+    /// </summary>
+    private bool ContainsNode(HtmlNode parent, HtmlNode target)
+    {
+        if (parent == target) return true;
+        
+        foreach (var child in parent.ChildNodes)
+        {
+            if (ContainsNode(child, target))
+                return true;
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Extract content from a subtree before a target node
+    /// </summary>
+    private void ExtractBeforeNodeInSubtree(HtmlNode node, HtmlNode target, System.Text.StringBuilder content)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            if (child == target)
+            {
+                // Found the target, stop here
+                return;
+            }
+            
+            if (ContainsNode(child, target))
+            {
+                // Target is in this child's subtree, recurse
+                ExtractBeforeNodeInSubtree(child, target, content);
+                return;
+            }
+            else
+            {
+                // This child is completely before the target
+                content.Append(child.OuterHtml);
+            }
+        }
     }
     
     /// <summary>
@@ -209,49 +293,57 @@ public class CorrespondenceDetector
         var doc = new HtmlDocument();
         doc.LoadHtml(email.HtmlBody);
         
-        // OWA often uses specific div structures
+        // OWA uses specific div structures
         var quoteDivs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg' or @id='appendonsend' or contains(@class, 'BodyFragment')]");
         
         if (quoteDivs != null && quoteDivs.Count > 0)
         {
-            // First correspondence
-            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, quoteDivs[0]);
+            // Extract main content (everything before first quoted div)
+            var firstQuoteDiv = quoteDivs[0];
+            var mainContent = ExtractAllContentBeforeSeparator(doc, firstQuoteDiv);
             
-            correspondences.Add(new Correspondence
+            if (!string.IsNullOrWhiteSpace(mainContent))
             {
-                From = email.From,
-                To = email.To,
-                SentOn = email.SentOn,
-                Subject = email.Subject,
-                HtmlContent = mainContent,
-                TextContent = HtmlToPlainText(mainContent),
-                Index = 0,
-                IsParent = true
-            });
+                correspondences.Add(new Correspondence
+                {
+                    From = email.From,
+                    To = email.To,
+                    SentOn = email.SentOn,
+                    Subject = email.Subject,
+                    HtmlContent = mainContent,
+                    TextContent = HtmlToPlainText(mainContent),
+                    Index = 0,
+                    IsParent = true
+                });
+            }
             
-            // Process quoted sections
+            // Process each quoted div as a separate correspondence
             for (int i = 0; i < quoteDivs.Count; i++)
             {
                 var quotedContent = quoteDivs[i].InnerHtml;
-                var metadata = ExtractEmailMetadata(quotedContent);
                 
-                correspondences.Add(new Correspondence
+                if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
-                    From = metadata.From ?? "Unknown",
-                    To = metadata.To ?? email.From,
-                    SentOn = metadata.Date,
-                    Subject = email.Subject,
-                    HtmlContent = quotedContent,
-                    TextContent = HtmlToPlainText(quotedContent),
-                    Index = i + 1,
-                    IsParent = false
-                });
+                    var metadata = ExtractEmailMetadata(quotedContent);
+                    
+                    correspondences.Add(new Correspondence
+                    {
+                        From = metadata.From ?? "Unknown",
+                        To = metadata.To ?? email.From,
+                        SentOn = metadata.Date,
+                        Subject = email.Subject,
+                        HtmlContent = quotedContent,
+                        TextContent = HtmlToPlainText(quotedContent),
+                        Index = correspondences.Count,
+                        IsParent = false
+                    });
+                }
             }
         }
         else
         {
-            // Fallback to Outlook detection
-            return DetectOutlookCorrespondences(email);
+            // Fallback to Outlook detection (with skip flag to prevent recursion)
+            return DetectOutlookCorrespondences(email, skipOwaCheck: true);
         }
         
         return correspondences;
@@ -458,7 +550,7 @@ public class CorrespondenceDetector
     {
         var correspondences = new List<Correspondence>();
         
-        // First correspondence
+        // First correspondence - content before first separator
         var mainContent = ExtractContentBeforeNode(doc.DocumentNode, separators[0]);
         
         correspondences.Add(new Correspondence
@@ -473,10 +565,11 @@ public class CorrespondenceDetector
             IsParent = true
         });
         
-        // Extract content after each separator
+        // Extract content between and after separators
         for (int i = 0; i < separators.Count; i++)
         {
-            var quotedContent = ExtractContentAfterNode(separators[i]);
+            HtmlNode? nextSeparator = i < separators.Count - 1 ? separators[i + 1] : null;
+            var quotedContent = ExtractContentBetweenNodes(separators[i], nextSeparator);
             
             if (!string.IsNullOrWhiteSpace(quotedContent))
             {
@@ -766,6 +859,38 @@ public class CorrespondenceDetector
             if (currentNode.Name == "hr" || 
                 (currentNode.Attributes["style"]?.Value?.Contains("border-top") == true))
                 break;
+                
+            content.Append(currentNode.OuterHtml);
+            currentNode = currentNode.NextSibling;
+        }
+        
+        return content.ToString();
+    }
+    
+    /// <summary>
+    /// Extract HTML content between two nodes (or after a node if endNode is null)
+    /// </summary>
+    /// <param name="startNode">The node after which to start extraction</param>
+    /// <param name="endNode">The node before which to stop extraction (or null to go to the end)</param>
+    /// <returns>HTML content between the two nodes</returns>
+    private string ExtractContentBetweenNodes(HtmlNode startNode, HtmlNode? endNode)
+    {
+        var content = new System.Text.StringBuilder();
+        var currentNode = startNode.NextSibling;
+        
+        while (currentNode != null)
+        {
+            // Stop if we reached the end node
+            if (endNode != null && currentNode == endNode)
+                break;
+            
+            // Skip pure whitespace text nodes
+            if (currentNode.NodeType == HtmlAgilityPack.HtmlNodeType.Text && 
+                string.IsNullOrWhiteSpace(currentNode.InnerText))
+            {
+                currentNode = currentNode.NextSibling;
+                continue;
+            }
                 
             content.Append(currentNode.OuterHtml);
             currentNode = currentNode.NextSibling;
