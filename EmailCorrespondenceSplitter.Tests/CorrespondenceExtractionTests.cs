@@ -24,11 +24,11 @@ public class CorrespondenceExtractionTests
     /// <param name="emailPath">Path to the email file (relative to test output directory)</param>
     /// <param name="expectedCount">Expected number of correspondences to be extracted</param>
     [Theory]
-    //[InlineData("Assets/em1.msg", 1)]
-    //[InlineData("Assets/em2.msg", 1)]
-    //[InlineData("Assets/em3.msg", 1)]
+    //[InlineData("Assets/em1.msg", 2)] // outlook with 2 correspondences
+    //[InlineData("Assets/em2.msg", 2)] // outlook with 2 correspondences 
+    [InlineData("Assets/em3.msg", 8)] // outlook with 8 correspondences and images
     //[InlineData("Assets/em4.msg", 1)]
-    [InlineData("Assets/em5.msg", 2)]
+    //[InlineData("Assets/em5.msg", 2)] // apple with 2 correspondences
     //[InlineData("Assets/em6.msg", 4)] // outlook with 3 correspondences
     public async Task ProcessEmail_ShouldExtractExpectedCorrespondenceCount(string emailPath, int expectedCount)
     {
