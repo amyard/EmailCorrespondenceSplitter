@@ -48,15 +48,11 @@ public class EmailSplitter
         var emailFolderPath = _outputManager.CreateEmailFolder(emailFilePath);
         Console.WriteLine($"  Output Folder: {emailFolderPath}");
         
-        // Save the parent email
-        await _outputManager.SaveParentEmailAsync(email, emailFolderPath);
-        Console.WriteLine($"  Saved parent email");
-        
-        // Save each correspondence
+        // Save each correspondence as individual file (do not save parent email separately)
         foreach (var correspondence in correspondences)
         {
             await _outputManager.SaveCorrespondenceAsync(correspondence, emailFolderPath, email.EmailType);
-            Console.WriteLine($"  Saved correspondence {correspondence.Index}: {correspondence.From}");
+            Console.WriteLine($"  Saved correspondence {correspondence.Index + 1}: {correspondence.From}");
         }
         
         Console.WriteLine($"  ? Completed processing {Path.GetFileName(emailFilePath)}\n");

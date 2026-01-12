@@ -42,27 +42,6 @@ public class OutputManager
     }
     
     /// <summary>
-    /// Save the parent email as an HTML file
-    /// </summary>
-    public async Task SaveParentEmailAsync(EmailMessage email, string outputFolder)
-    {
-        var fileName = "00_parent_email.html";
-        var filePath = Path.Combine(outputFolder, fileName);
-        
-        var html = GenerateEmailHtml(
-            email.Subject,
-            email.From,
-            email.To,
-            email.Cc,
-            email.SentOn,
-            email.HtmlBody,
-            $"Email Type: {email.EmailType}"
-        );
-        
-        await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);
-    }
-    
-    /// <summary>
     /// Save a correspondence as an HTML file
     /// </summary>
     public async Task SaveCorrespondenceAsync(Correspondence correspondence, string outputFolder, EmailType emailType)
@@ -77,7 +56,7 @@ public class OutputManager
             string.Empty,
             correspondence.SentOn,
             correspondence.HtmlContent,
-            $"Correspondence Index: {correspondence.Index} | Email Type: {emailType}"
+            $"Correspondence Index: {correspondence.Index + 1} | Is Parent: {correspondence.IsParent} | Email Type: {emailType}"
         );
         
         await File.WriteAllTextAsync(filePath, html, Encoding.UTF8);

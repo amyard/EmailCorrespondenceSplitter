@@ -42,4 +42,8 @@
         </None>
     </ItemGroup>
 
+    <ItemGroup>
+        <ProjectReference Include="..\EmailCorrespondenceSplitter.Console\EmailCorrespondenceSplitter.Console.csproj" />
+    </ItemGroup>
+
 </Project>
