@@ -6,6 +6,7 @@ namespace EmailCorrespondenceSplitter.Services;
 
 /// <summary>
 /// Detects and extracts individual correspondences from email threads
+/// Enhanced to support multiple email client types
 /// </summary>
 public class CorrespondenceDetector
 {
@@ -28,8 +29,15 @@ public class CorrespondenceDetector
         {
             EmailType.Gmail => DetectGmailCorrespondences(email),
             EmailType.Outlook => DetectOutlookCorrespondences(email),
+            EmailType.Office365 => DetectOffice365Correspondences(email),
+            EmailType.OutlookWeb => DetectOutlookWebCorrespondences(email),
             EmailType.Apple => DetectAppleCorrespondences(email),
-            _ => DetectGenericCorrespondences(email)
+            EmailType.Thunderbird => DetectThunderbirdCorrespondences(email),
+            EmailType.YahooMail => DetectYahooMailCorrespondences(email),
+            EmailType.ProtonMail => DetectProtonMailCorrespondences(email),
+            EmailType.ZohaMail => DetectZohoMailCorrespondences(email),
+            EmailType.Generic => DetectGenericCorrespondences(email),
+            _ => DetectUniversalCorrespondences(email) // Ultimate fallback with all patterns
         };
         
         // If no correspondences detected, treat as single email
@@ -156,6 +164,430 @@ public class CorrespondenceDetector
             if (matches.Count > 0)
             {
                 correspondences = SplitByFromPattern(email);
+            }
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Detect Office 365 correspondences
+    /// </summary>
+    private List<Correspondence> DetectOffice365Correspondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Office 365 uses similar patterns to Outlook but with additional metadata
+        // Try multiple patterns
+        
+        // Pattern 1: HR separators
+        var separators = doc.DocumentNode.SelectNodes("//hr");
+        if (separators != null && separators.Count > 0)
+        {
+            return ExtractWithSeparators(email, doc, separators);
+        }
+        
+        // Pattern 2: Original message divider
+        var originalMessageDivs = doc.DocumentNode.SelectNodes("//div[contains(., 'Original Message') or contains(., 'Original Appointment')]");
+        if (originalMessageDivs != null && originalMessageDivs.Count > 0)
+        {
+            return ExtractWithOriginalMessageMarkers(email, doc, originalMessageDivs);
+        }
+        
+        // Pattern 3: From/Sent/To header blocks
+        return DetectOutlookCorrespondences(email);
+    }
+    
+    /// <summary>
+    /// Detect Outlook Web App (OWA) correspondences
+    /// </summary>
+    private List<Correspondence> DetectOutlookWebCorrespondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // OWA often uses specific div structures
+        var quoteDivs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg' or @id='appendonsend' or contains(@class, 'BodyFragment')]");
+        
+        if (quoteDivs != null && quoteDivs.Count > 0)
+        {
+            // First correspondence
+            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, quoteDivs[0]);
+            
+            correspondences.Add(new Correspondence
+            {
+                From = email.From,
+                To = email.To,
+                SentOn = email.SentOn,
+                Subject = email.Subject,
+                HtmlContent = mainContent,
+                TextContent = HtmlToPlainText(mainContent),
+                Index = 0,
+                IsParent = true
+            });
+            
+            // Process quoted sections
+            for (int i = 0; i < quoteDivs.Count; i++)
+            {
+                var quotedContent = quoteDivs[i].InnerHtml;
+                var metadata = ExtractEmailMetadata(quotedContent);
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    SentOn = metadata.Date,
+                    Subject = email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = i + 1,
+                    IsParent = false
+                });
+            }
+        }
+        else
+        {
+            // Fallback to Outlook detection
+            return DetectOutlookCorrespondences(email);
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Detect Thunderbird correspondences
+    /// </summary>
+    private List<Correspondence> DetectThunderbirdCorrespondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Thunderbird uses moz-cite-prefix or blockquote type="cite"
+        var citeBlocks = doc.DocumentNode.SelectNodes("//blockquote[@type='cite'] | //div[contains(@class, 'moz-cite-prefix')]");
+        
+        if (citeBlocks != null && citeBlocks.Count > 0)
+        {
+            // First correspondence
+            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, citeBlocks[0]);
+            
+            correspondences.Add(new Correspondence
+            {
+                From = email.From,
+                To = email.To,
+                SentOn = email.SentOn,
+                Subject = email.Subject,
+                HtmlContent = mainContent,
+                TextContent = HtmlToPlainText(mainContent),
+                Index = 0,
+                IsParent = true
+            });
+            
+            // Process quoted sections
+            int index = 1;
+            foreach (var citeBlock in citeBlocks)
+            {
+                var quotedContent = citeBlock.InnerHtml;
+                var metadata = ExtractEmailMetadata(quotedContent);
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    SentOn = metadata.Date,
+                    Subject = email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = index++,
+                    IsParent = false
+                });
+            }
+        }
+        else
+        {
+            // Fallback to generic detection
+            return DetectGenericCorrespondences(email);
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Detect Yahoo Mail correspondences
+    /// </summary>
+    private List<Correspondence> DetectYahooMailCorrespondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Yahoo uses yahoo-style-wrap divs or yiv prefixed classes
+        var quoteBlocks = doc.DocumentNode.SelectNodes("//div[contains(@class, 'yahoo-style-wrap')] | //div[contains(@class, 'qtdSeparateBR')] | //blockquote");
+        
+        if (quoteBlocks != null && quoteBlocks.Count > 0)
+        {
+            // First correspondence
+            var mainContent = ExtractContentBeforeNode(doc.DocumentNode, quoteBlocks[0]);
+            
+            correspondences.Add(new Correspondence
+            {
+                From = email.From,
+                To = email.To,
+                SentOn = email.SentOn,
+                Subject = email.Subject,
+                HtmlContent = mainContent,
+                TextContent = HtmlToPlainText(mainContent),
+                Index = 0,
+                IsParent = true
+            });
+            
+            // Process quoted sections
+            int index = 1;
+            foreach (var quoteBlock in quoteBlocks)
+            {
+                var quotedContent = quoteBlock.InnerHtml;
+                var metadata = ExtractEmailMetadata(quotedContent);
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    SentOn = metadata.Date,
+                    Subject = email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = index++,
+                    IsParent = false
+                });
+            }
+        }
+        else
+        {
+            return DetectGenericCorrespondences(email);
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Detect ProtonMail correspondences
+    /// </summary>
+    private List<Correspondence> DetectProtonMailCorrespondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // ProtonMail uses protonmail_quote class and standard blockquotes
+        var quoteBlocks = doc.DocumentNode.SelectNodes("//div[contains(@class, 'protonmail_quote')] | //blockquote[contains(@class, 'protonmail')] | //blockquote");
+        
+        if (quoteBlocks != null && quoteBlocks.Count > 0)
+        {
+            return ExtractWithQuoteBlocks(email, quoteBlocks);
+        }
+        
+        return DetectGenericCorrespondences(email);
+    }
+    
+    /// <summary>
+    /// Detect Zoho Mail correspondences
+    /// </summary>
+    private List<Correspondence> DetectZohoMailCorrespondences(EmailMessage email)
+    {
+        var correspondences = new List<Correspondence>();
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Zoho uses specific div structures
+        var quoteBlocks = doc.DocumentNode.SelectNodes("//div[contains(@class, 'zmail_')] | //blockquote | //div[contains(@id, 'Zm')]");
+        
+        if (quoteBlocks != null && quoteBlocks.Count > 0)
+        {
+            return ExtractWithQuoteBlocks(email, quoteBlocks);
+        }
+        
+        return DetectGenericCorrespondences(email);
+    }
+    
+    /// <summary>
+    /// Universal correspondence detection - tries all known patterns
+    /// This is the ultimate fallback that combines all detection strategies
+    /// </summary>
+    private List<Correspondence> DetectUniversalCorrespondences(EmailMessage email)
+    {
+        var doc = new HtmlDocument();
+        doc.LoadHtml(email.HtmlBody);
+        
+        // Try multiple detection strategies in order of reliability
+        
+        // 1. Try blockquote elements (most universal)
+        var blockquotes = doc.DocumentNode.SelectNodes("//blockquote");
+        if (blockquotes != null && blockquotes.Count > 0)
+        {
+            var result = ExtractWithQuoteBlocks(email, blockquotes);
+            if (result.Count > 0) return result;
+        }
+        
+        // 2. Try HR separators
+        var hrs = doc.DocumentNode.SelectNodes("//hr");
+        if (hrs != null && hrs.Count > 0)
+        {
+            var result = ExtractWithSeparators(email, doc, hrs);
+            if (result.Count > 0) return result;
+        }
+        
+        // 3. Try quote divs (various patterns)
+        var quoteDivs = doc.DocumentNode.SelectNodes("//div[contains(@class, 'quote') or contains(@class, 'quoted') or contains(@id, 'quote')]");
+        if (quoteDivs != null && quoteDivs.Count > 0)
+        {
+            var result = ExtractWithQuoteBlocks(email, quoteDivs);
+            if (result.Count > 0) return result;
+        }
+        
+        // 4. Try From: pattern matching
+        return DetectGenericCorrespondences(email);
+    }
+    
+    /// <summary>
+    /// Helper: Extract correspondences using separator nodes (HR, dividers)
+    /// </summary>
+    private List<Correspondence> ExtractWithSeparators(EmailMessage email, HtmlDocument doc, HtmlNodeCollection separators)
+    {
+        var correspondences = new List<Correspondence>();
+        
+        // First correspondence
+        var mainContent = ExtractContentBeforeNode(doc.DocumentNode, separators[0]);
+        
+        correspondences.Add(new Correspondence
+        {
+            From = email.From,
+            To = email.To,
+            SentOn = email.SentOn,
+            Subject = email.Subject,
+            HtmlContent = mainContent,
+            TextContent = HtmlToPlainText(mainContent),
+            Index = 0,
+            IsParent = true
+        });
+        
+        // Extract content after each separator
+        for (int i = 0; i < separators.Count; i++)
+        {
+            var quotedContent = ExtractContentAfterNode(separators[i]);
+            
+            if (!string.IsNullOrWhiteSpace(quotedContent))
+            {
+                var metadata = ExtractEmailMetadata(quotedContent);
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    SentOn = metadata.Date,
+                    Subject = email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = i + 1,
+                    IsParent = false
+                });
+            }
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Helper: Extract correspondences using quote blocks (blockquote, div.quote, etc.)
+    /// </summary>
+    private List<Correspondence> ExtractWithQuoteBlocks(EmailMessage email, HtmlNodeCollection quoteBlocks)
+    {
+        var correspondences = new List<Correspondence>();
+        
+        // First correspondence
+        var doc = quoteBlocks[0].OwnerDocument;
+        var mainContent = ExtractContentBeforeNode(doc.DocumentNode, quoteBlocks[0]);
+        
+        correspondences.Add(new Correspondence
+        {
+            From = email.From,
+            To = email.To,
+            SentOn = email.SentOn,
+            Subject = email.Subject,
+            HtmlContent = mainContent,
+            TextContent = HtmlToPlainText(mainContent),
+            Index = 0,
+            IsParent = true
+        });
+        
+        // Process quoted sections
+        int index = 1;
+        foreach (var quoteBlock in quoteBlocks)
+        {
+            var quotedContent = quoteBlock.InnerHtml;
+            var metadata = ExtractEmailMetadata(quotedContent);
+            
+            correspondences.Add(new Correspondence
+            {
+                From = metadata.From ?? "Unknown",
+                To = metadata.To ?? email.From,
+                SentOn = metadata.Date,
+                Subject = email.Subject,
+                HtmlContent = quotedContent,
+                TextContent = HtmlToPlainText(quotedContent),
+                Index = index++,
+                IsParent = false
+            });
+        }
+        
+        return correspondences;
+    }
+    
+    /// <summary>
+    /// Helper: Extract correspondences using "Original Message" markers
+    /// </summary>
+    private List<Correspondence> ExtractWithOriginalMessageMarkers(EmailMessage email, HtmlDocument doc, HtmlNodeCollection markers)
+    {
+        var correspondences = new List<Correspondence>();
+        
+        // First correspondence
+        var mainContent = ExtractContentBeforeNode(doc.DocumentNode, markers[0]);
+        
+        correspondences.Add(new Correspondence
+        {
+            From = email.From,
+            To = email.To,
+            SentOn = email.SentOn,
+            Subject = email.Subject,
+            HtmlContent = mainContent,
+            TextContent = HtmlToPlainText(mainContent),
+            Index = 0,
+            IsParent = true
+        });
+        
+        // Extract content after each marker
+        int index = 1;
+        foreach (var marker in markers)
+        {
+            var quotedContent = ExtractContentAfterNode(marker);
+            
+            if (!string.IsNullOrWhiteSpace(quotedContent))
+            {
+                var metadata = ExtractEmailMetadata(quotedContent);
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    SentOn = metadata.Date,
+                    Subject = email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = index++,
+                    IsParent = false
+                });
             }
         }
         

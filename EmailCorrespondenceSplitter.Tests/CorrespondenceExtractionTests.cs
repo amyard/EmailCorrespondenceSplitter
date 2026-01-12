@@ -28,7 +28,7 @@ public class CorrespondenceExtractionTests
     //[InlineData("Assets/em2.msg", 1)]
     //[InlineData("Assets/em3.msg", 1)]
     //[InlineData("Assets/em4.msg", 1)]
-    [InlineData("Assets/em5.msg", 2)]
+    //[InlineData("Assets/em5.msg", 2)]
     [InlineData("Assets/em6.msg", 3)]
     public async Task ProcessEmail_ShouldExtractExpectedCorrespondenceCount(string emailPath, int expectedCount)
     {

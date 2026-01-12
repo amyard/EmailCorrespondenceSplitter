@@ -57,7 +57,7 @@ public class EmailMessage
 }
 
 /// <summary>
-/// Email client types
+/// Email client types with expanded support for common email clients
 /// </summary>
 public enum EmailType
 {
@@ -65,5 +65,12 @@ public enum EmailType
     Outlook,
     Gmail,
     Apple,
+    Thunderbird,
+    YahooMail,
+    Office365,
+    OutlookWeb,
+    ProtonMail,
+    ZohaMail,
+    Generic,  // For standard RFC-compliant emails
     Other
 }

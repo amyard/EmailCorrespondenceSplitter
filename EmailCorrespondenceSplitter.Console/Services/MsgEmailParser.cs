@@ -135,38 +135,54 @@ public class MsgEmailParser : IEmailParser
     private EmailType DetectEmailType(Storage.Message msg)
     {
         var htmlBody = msg.BodyHtml ?? string.Empty;
+        var headerText = msg.Headers?.ToString() ?? string.Empty;
         
-        // Check for Gmail indicators
-        if (htmlBody.Contains("gmail_quote", StringComparison.OrdinalIgnoreCase) ||
-            htmlBody.Contains("gmail_signature", StringComparison.OrdinalIgnoreCase))
+        // Priority 1: Check headers first (most reliable)
+        if (!string.IsNullOrEmpty(headerText))
         {
-            return EmailType.Gmail;
-        }
-        
-        // Check for Apple Mail indicators
-        if (htmlBody.Contains("Apple-interchange-newline", StringComparison.OrdinalIgnoreCase) ||
-            htmlBody.Contains("AppleMailSignature", StringComparison.OrdinalIgnoreCase))
-        {
-            return EmailType.Apple;
-        }
-        
-        // Check for Outlook indicators
-        if (htmlBody.Contains("MsoNormal", StringComparison.OrdinalIgnoreCase) ||
-            htmlBody.Contains("WordSection", StringComparison.OrdinalIgnoreCase))
-        {
-            return EmailType.Outlook;
-        }
-        
-        // Check headers if available
-        if (msg.Headers != null)
-        {
-            var headerText = msg.Headers.ToString() ?? string.Empty;
-            
-            if (headerText.Contains("X-Google", StringComparison.OrdinalIgnoreCase))
+            // Gmail
+            if (headerText.Contains("X-Google", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("X-Gm-Message-State", StringComparison.OrdinalIgnoreCase))
             {
                 return EmailType.Gmail;
             }
             
+            // Office 365
+            if (headerText.Contains("Microsoft.Exchange.Transport", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("X-MS-Exchange", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.Office365;
+            }
+            
+            // ProtonMail
+            if (headerText.Contains("X-Pm-", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("protonmail", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.ProtonMail;
+            }
+            
+            // Thunderbird
+            if (headerText.Contains("Thunderbird", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("Mozilla/5.0", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.Thunderbird;
+            }
+            
+            // Yahoo Mail
+            if (headerText.Contains("YMailISG", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("X-Yahoo", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.YahooMail;
+            }
+            
+            // Zoho Mail
+            if (headerText.Contains("X-Zoho", StringComparison.OrdinalIgnoreCase) ||
+                headerText.Contains("zoho.com", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.ZohaMail;
+            }
+            
+            // X-Mailer header detection
             if (headerText.Contains("X-Mailer", StringComparison.OrdinalIgnoreCase))
             {
                 if (headerText.Contains("Apple", StringComparison.OrdinalIgnoreCase))
@@ -175,12 +191,84 @@ public class MsgEmailParser : IEmailParser
                 }
                 if (headerText.Contains("Microsoft", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (headerText.Contains("Office 365", StringComparison.OrdinalIgnoreCase))
+                        return EmailType.Office365;
                     return EmailType.Outlook;
                 }
             }
         }
         
-        // Default to Outlook for MSG files if no other indicators found
+        // Priority 2: Check HTML body patterns
+        if (!string.IsNullOrEmpty(htmlBody))
+        {
+            // Gmail indicators
+            if (htmlBody.Contains("gmail_quote", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("gmail_signature", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("gmail_attr", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.Gmail;
+            }
+            
+            // Apple Mail indicators
+            if (htmlBody.Contains("Apple-interchange-newline", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("AppleMailSignature", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("webkit-html-composer-wrapper", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.Apple;
+            }
+            
+            // Outlook/Office 365 indicators
+            if (htmlBody.Contains("MsoNormal", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("WordSection", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("OutlookMessageHeader", StringComparison.OrdinalIgnoreCase))
+            {
+                // Try to distinguish between Outlook and Office 365
+                if (htmlBody.Contains("safelink.protection.outlook.com", StringComparison.OrdinalIgnoreCase) ||
+                    htmlBody.Contains("outlook.office365.com", StringComparison.OrdinalIgnoreCase))
+                {
+                    return EmailType.Office365;
+                }
+                return EmailType.Outlook;
+            }
+            
+            // Outlook Web (OWA)
+            if (htmlBody.Contains("OWALink", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("x_x_", StringComparison.OrdinalIgnoreCase)) // O365 name mangling
+            {
+                return EmailType.OutlookWeb;
+            }
+            
+            // Thunderbird
+            if (htmlBody.Contains("moz-signature", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("moz-cite-prefix", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.Thunderbird;
+            }
+            
+            // Yahoo Mail
+            if (htmlBody.Contains("yahoo-style-wrap", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("yiv", StringComparison.OrdinalIgnoreCase)) // Yahoo's class prefix
+            {
+                return EmailType.YahooMail;
+            }
+            
+            // ProtonMail
+            if (htmlBody.Contains("protonmail_quote", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("protonmail_signature", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.ProtonMail;
+            }
+            
+            // Zoho Mail
+            if (htmlBody.Contains("zmail_", StringComparison.OrdinalIgnoreCase) ||
+                htmlBody.Contains("zoho_mail", StringComparison.OrdinalIgnoreCase))
+            {
+                return EmailType.ZohaMail;
+            }
+        }
+        
+        // Priority 3: Default based on file type
+        // MSG files are typically from Outlook/Exchange ecosystem
         return EmailType.Outlook;
     }
 }
