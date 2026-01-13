@@ -105,14 +105,30 @@ public class MsgEmailParser : IEmailParser
                 EmailType = DetectEmailType(msg)
             };
             
-            // Extract attachment names
+            // Extract attachments and embedded images
             if (msg.Attachments != null && msg.Attachments.Count > 0)
             {
                 foreach (var attachment in msg.Attachments)
                 {
                     if (attachment is Storage.Attachment att)
                     {
-                        emailMessage.Attachments.Add(att.FileName ?? "Unnamed Attachment");
+                        // Check if this is an embedded image (has ContentId)
+                        var contentId = att.ContentId;
+                        
+                        if (!string.IsNullOrWhiteSpace(contentId) && att.Data != null)
+                        {
+                            // This is an embedded image
+                            // Remove angle brackets if present (e.g., <image001.png@01D9565A.226155F0> -> image001.png@01D9565A.226155F0)
+                            var cleanContentId = contentId.Trim('<', '>');
+                            emailMessage.EmbeddedImages[cleanContentId] = att.Data;
+                            
+                            Console.WriteLine($"  Found embedded image: cid:{cleanContentId} ({att.Data.Length} bytes)");
+                        }
+                        else
+                        {
+                            // Regular attachment
+                            emailMessage.Attachments.Add(att.FileName ?? "Unnamed Attachment");
+                        }
                     }
                 }
             }

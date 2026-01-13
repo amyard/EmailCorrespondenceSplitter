@@ -54,6 +54,12 @@ public class EmailMessage
     /// List of attachments
     /// </summary>
     public List<string> Attachments { get; set; } = new();
+    
+    /// <summary>
+    /// Embedded images from the email
+    /// Key: Content-ID (without cid: prefix), Value: Image data as byte array
+    /// </summary>
+    public Dictionary<string, byte[]> EmbeddedImages { get; set; } = new();
 }
 
 /// <summary>

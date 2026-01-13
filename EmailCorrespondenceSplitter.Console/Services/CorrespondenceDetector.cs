@@ -173,6 +173,9 @@ public class CorrespondenceDetector
             
             if (!string.IsNullOrWhiteSpace(mainContent))
             {
+                // Extract images referenced in this correspondence's HTML
+                var imagesForCorrespondence = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages);
+                
                 correspondences.Add(new Correspondence
                 {
                     From = email.From,
@@ -182,7 +185,8 @@ public class CorrespondenceDetector
                     HtmlContent = mainContent,
                     TextContent = HtmlToPlainText(mainContent),
                     Index = 0,
-                    IsParent = true
+                    IsParent = true,
+                    EmbeddedImages = imagesForCorrespondence
                 });
             }
             
@@ -195,6 +199,7 @@ public class CorrespondenceDetector
                 if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
                     var metadata = ExtractEmailMetadata(quotedContent);
+                    var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
                     
                     correspondences.Add(new Correspondence
                     {
@@ -205,7 +210,8 @@ public class CorrespondenceDetector
                         HtmlContent = quotedContent,
                         TextContent = HtmlToPlainText(quotedContent),
                         Index = correspondences.Count,
-                        IsParent = false
+                        IsParent = false,
+                        EmbeddedImages = imagesForCorrespondence
                     });
                 }
             }
@@ -223,6 +229,44 @@ public class CorrespondenceDetector
         }
         
         return correspondences;
+    }
+    
+    /// <summary>
+    /// Extract images that are referenced in the given HTML content
+    /// </summary>
+    /// <param name="htmlContent">HTML content to search for image references</param>
+    /// <param name="allEmbeddedImages">All embedded images from the email</param>
+    /// <returns>Dictionary of images referenced in this HTML</returns>
+    private Dictionary<string, byte[]> ExtractImagesForHtmlContent(string htmlContent, Dictionary<string, byte[]> allEmbeddedImages)
+    {
+        var imagesForContent = new Dictionary<string, byte[]>();
+        
+        if (string.IsNullOrWhiteSpace(htmlContent) || allEmbeddedImages.Count == 0)
+        {
+            return imagesForContent;
+        }
+        
+        // Find all cid: references in the HTML
+        // Pattern: src="cid:xxx" or src='cid:xxx' or background="cid:xxx"
+        var cidPattern = @"(?:src|background)\s*=\s*['""]cid:([^'""]+)['""]";
+        var matches = Regex.Matches(htmlContent, cidPattern, RegexOptions.IgnoreCase);
+        
+        foreach (Match match in matches)
+        {
+            var contentId = match.Groups[1].Value;
+            
+            // Try to find the image in the embedded images collection
+            if (allEmbeddedImages.TryGetValue(contentId, out var imageData))
+            {
+                imagesForContent[contentId] = imageData;
+            }
+            else
+            {
+                Console.WriteLine($"  Warning: Image reference cid:{contentId} found but image data not available");
+            }
+        }
+        
+        return imagesForContent;
     }
     
     /// <summary>
@@ -608,6 +652,7 @@ public class CorrespondenceDetector
         
         // First correspondence - content before first separator
         var mainContent = ExtractContentBeforeNode(doc.DocumentNode, separators[0]);
+        var imagesForMain = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages);
         
         correspondences.Add(new Correspondence
         {
@@ -618,7 +663,8 @@ public class CorrespondenceDetector
             HtmlContent = mainContent,
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
-            IsParent = true
+            IsParent = true,
+            EmbeddedImages = imagesForMain
         });
         
         // Extract content between and after separators
@@ -630,6 +676,7 @@ public class CorrespondenceDetector
             if (!string.IsNullOrWhiteSpace(quotedContent))
             {
                 var metadata = ExtractEmailMetadata(quotedContent);
+                var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
                 
                 correspondences.Add(new Correspondence
                 {
@@ -640,7 +687,8 @@ public class CorrespondenceDetector
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = i + 1,
-                    IsParent = false
+                    IsParent = false,
+                    EmbeddedImages = imagesForCorrespondence
                 });
             }
         }
@@ -658,6 +706,7 @@ public class CorrespondenceDetector
         // First correspondence
         var doc = quoteBlocks[0].OwnerDocument;
         var mainContent = ExtractContentBeforeNode(doc.DocumentNode, quoteBlocks[0]);
+        var imagesForMain = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages);
         
         correspondences.Add(new Correspondence
         {
@@ -668,7 +717,8 @@ public class CorrespondenceDetector
             HtmlContent = mainContent,
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
-            IsParent = true
+            IsParent = true,
+            EmbeddedImages = imagesForMain
         });
         
         // Process quoted sections
@@ -677,6 +727,7 @@ public class CorrespondenceDetector
         {
             var quotedContent = quoteBlock.InnerHtml;
             var metadata = ExtractEmailMetadata(quotedContent);
+            var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
             
             correspondences.Add(new Correspondence
             {
@@ -687,7 +738,8 @@ public class CorrespondenceDetector
                 HtmlContent = quotedContent,
                 TextContent = HtmlToPlainText(quotedContent),
                 Index = index++,
-                IsParent = false
+                IsParent = false,
+                EmbeddedImages = imagesForCorrespondence
             });
         }
         
@@ -703,6 +755,7 @@ public class CorrespondenceDetector
         
         // First correspondence
         var mainContent = ExtractContentBeforeNode(doc.DocumentNode, markers[0]);
+        var imagesForMain = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages);
         
         correspondences.Add(new Correspondence
         {
@@ -713,7 +766,8 @@ public class CorrespondenceDetector
             HtmlContent = mainContent,
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
-            IsParent = true
+            IsParent = true,
+            EmbeddedImages = imagesForMain
         });
         
         // Extract content after each marker
@@ -725,6 +779,7 @@ public class CorrespondenceDetector
             if (!string.IsNullOrWhiteSpace(quotedContent))
             {
                 var metadata = ExtractEmailMetadata(quotedContent);
+                var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
                 
                 correspondences.Add(new Correspondence
                 {
@@ -735,7 +790,8 @@ public class CorrespondenceDetector
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = index++,
-                    IsParent = false
+                    IsParent = false,
+                    EmbeddedImages = imagesForCorrespondence
                 });
             }
         }
@@ -843,7 +899,7 @@ public class CorrespondenceDetector
                             else
                             {
                                 quotedContent = contentBeforeNested;
-                            }
+                              }
                         }
                     }
                     
@@ -932,7 +988,6 @@ public class CorrespondenceDetector
         var correspondences = new List<Correspondence>();
         
         // Pattern to match email headers in forwarded messages
-        var headerPattern = @"(?:From:|Sent:|To:|Subject:).*?(?=From:|Sent:|$)";
         var sections = Regex.Split(email.HtmlBody, @"(?=<b>From:</b>|<strong>From:</strong>|From:)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         
         for (int i = 0; i < sections.Length; i++)
@@ -940,6 +995,7 @@ public class CorrespondenceDetector
             if (!string.IsNullOrWhiteSpace(sections[i]))
             {
                 var metadata = ExtractEmailMetadata(sections[i]);
+                var imagesForCorrespondence = ExtractImagesForHtmlContent(sections[i], email.EmbeddedImages);
                 
                 correspondences.Add(new Correspondence
                 {
@@ -950,7 +1006,8 @@ public class CorrespondenceDetector
                     HtmlContent = sections[i],
                     TextContent = HtmlToPlainText(sections[i]),
                     Index = i,
-                    IsParent = i == 0
+                    IsParent = i == 0,
+                    EmbeddedImages = imagesForCorrespondence
                 });
             }
         }
@@ -1092,7 +1149,8 @@ public class CorrespondenceDetector
             HtmlContent = email.HtmlBody,
             TextContent = email.TextBody,
             Index = 0,
-            IsParent = true
+            IsParent = true,
+            EmbeddedImages = new Dictionary<string, byte[]>(email.EmbeddedImages)
         };
     }
     

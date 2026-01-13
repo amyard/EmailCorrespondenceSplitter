@@ -44,4 +44,10 @@ public class Correspondence
     /// Whether this is the original (parent) email
     /// </summary>
     public bool IsParent { get; set; }
+    
+    /// <summary>
+    /// Embedded images referenced in the HTML content
+    /// Key: Content-ID (cid:xxx), Value: Image data as byte array
+    /// </summary>
+    public Dictionary<string, byte[]> EmbeddedImages { get; set; } = new();
 }
