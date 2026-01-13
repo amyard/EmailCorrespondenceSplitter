@@ -76,91 +76,60 @@ public class OutputManager
                 email.SentOn = correspondence.SentOn.Value;
             }
             
-            // Process HTML content with embedded images
-            string htmlContent = correspondence.HtmlContent;
-            
-            if (!string.IsNullOrWhiteSpace(htmlContent) && correspondence.EmbeddedImages.Count > 0)
-            {
-                // Convert cid: references to base64 data URLs for HTML rendering
-                htmlContent = EmbedImagesAsBase64(htmlContent, correspondence.EmbeddedImages);
-                
-                // Also add images as attachments to the MSG file
-                // Note: MsgKit has limited support for inline images, so the base64 embedding
-                // in HTML is the primary way images will render when the MSG file is opened
-                foreach (var imageEntry in correspondence.EmbeddedImages)
-                {
-                    var contentId = imageEntry.Key;
-                    var imageData = imageEntry.Value;
-                    
-                    // Determine file extension from image data (basic detection)
-                    var extension = GetImageExtension(imageData);
-                    var imageName = $"image_{contentId.Replace("@", "_").Replace(".", "_")}{extension}";
-                    
-                    try
-                    {
-                        // Save image data to a temporary file
-                        var tempImagePath = Path.Combine(Path.GetTempPath(), imageName);
-                        File.WriteAllBytes(tempImagePath, imageData);
-                        
-                        // Add as attachment using the file path
-                        email.Attachments.Add(tempImagePath);
-                        
-                        // Note: Temp files will be cleaned up by the system eventually
-                        // For production, consider implementing proper cleanup
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"  Warning: Could not add image {imageName} to MSG: {ex.Message}");
-                    }
-                }
-            }
-            
             // Set body (prefer HTML, fallback to text)
-            if (!string.IsNullOrWhiteSpace(htmlContent))
+            // Keep the original HTML content with cid: references intact
+            if (!string.IsNullOrWhiteSpace(correspondence.HtmlContent))
             {
-                email.BodyHtml = htmlContent;
+                email.BodyHtml = correspondence.HtmlContent;
             }
             else if (!string.IsNullOrWhiteSpace(correspondence.TextContent))
             {
                 email.BodyText = correspondence.TextContent;
             }
             
+            // Add embedded images as inline attachments with proper Content-ID
+            if (correspondence.EmbeddedImages.Count > 0)
+            {
+                foreach (var imageEntry in correspondence.EmbeddedImages)
+                {
+                    var contentId = imageEntry.Key;
+                    var imageData = imageEntry.Value;
+                    
+                    // Determine file extension and MIME type from image data
+                    var extension = GetImageExtension(imageData);
+                    var mimeType = GetImageMimeType(imageData);
+                    var imageName = $"image_{contentId.Replace("@", "_").Replace(".", "_")}{extension}";
+                    
+                    try
+                    {
+                        // Create a temporary file for the image
+                        var tempImagePath = Path.Combine(Path.GetTempPath(), imageName);
+                        File.WriteAllBytes(tempImagePath, imageData);
+                        
+                        // Add as inline attachment with Content-ID
+                        // MsgKit should preserve the inline nature with the contentId parameter
+                        email.Attachments.Add(tempImagePath, contentId: contentId);
+                        
+                        // Clean up the temporary file after adding to the email
+                        try
+                        {
+                            File.Delete(tempImagePath);
+                        }
+                        catch
+                        {
+                            // If deletion fails, it's not critical - temp folder will be cleaned eventually
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"  Warning: Could not add embedded image cid:{contentId} to MSG: {ex.Message}");
+                    }
+                }
+            }
+            
             // Save the MSG file
             email.Save(filePath);
         });
-    }
-    
-    /// <summary>
-    /// Convert cid: image references to base64 data URLs in HTML
-    /// </summary>
-    private string EmbedImagesAsBase64(string htmlContent, Dictionary<string, byte[]> embeddedImages)
-    {
-        // Pattern to match cid: references: src="cid:xxx" or src='cid:xxx'
-        var cidPattern = @"((?:src|background)\s*=\s*['""])cid:([^'""]+)(['""])";
-        
-        var result = Regex.Replace(htmlContent, cidPattern, (match) =>
-        {
-            var prefix = match.Groups[1].Value; // src=" or src='
-            var contentId = match.Groups[2].Value;
-            var suffix = match.Groups[3].Value; // " or '
-            
-            // Try to find the image data
-            if (embeddedImages.TryGetValue(contentId, out var imageData))
-            {
-                // Convert to base64 data URL
-                var base64 = Convert.ToBase64String(imageData);
-                var mimeType = GetImageMimeType(imageData);
-                var dataUrl = $"data:{mimeType};base64,{base64}";
-                
-                return $"{prefix}{dataUrl}{suffix}";
-            }
-            
-            // If image not found, keep original cid: reference
-            Console.WriteLine($"  Warning: Could not embed image cid:{contentId} - data not found");
-            return match.Value;
-        }, RegexOptions.IgnoreCase);
-        
-        return result;
     }
     
     /// <summary>

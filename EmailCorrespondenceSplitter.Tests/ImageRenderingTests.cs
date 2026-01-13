@@ -69,7 +69,7 @@ public class ImageRenderingTests
     }
     
     [Fact]
-    public async Task Em3_OutputShouldContainBase64Images()
+    public async Task Em3_OutputShouldPreserveInlineImages()
     {
         // Arrange
         var emailParser = new MsgEmailParser();
@@ -100,6 +100,37 @@ public class ImageRenderingTests
             foreach (var file in msgFiles)
             {
                 _output.WriteLine($"  {Path.GetFileName(file)}");
+                
+                // Verify that the created MSG files can be read and have embedded images
+                using var msg = new MsgReader.Outlook.Storage.Message(file);
+                _output.WriteLine($"    HTML Body length: {msg.BodyHtml?.Length ?? 0}");
+                _output.WriteLine($"    Attachments: {msg.Attachments?.Count ?? 0}");
+                
+                // Check for cid: references in HTML
+                if (!string.IsNullOrEmpty(msg.BodyHtml))
+                {
+                    var cidMatches = System.Text.RegularExpressions.Regex.Matches(
+                        msg.BodyHtml, 
+                        @"cid:([^'""]+)", 
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    
+                    _output.WriteLine($"    CID references in HTML: {cidMatches.Count}");
+                    
+                    // Verify embedded images are present as attachments with ContentId
+                    if (msg.Attachments != null)
+                    {
+                        var embeddedImages = msg.Attachments
+                            .OfType<MsgReader.Outlook.Storage.Attachment>()
+                            .Where(a => !string.IsNullOrWhiteSpace(a.ContentId))
+                            .ToList();
+                        
+                        _output.WriteLine($"    Embedded images (with ContentId): {embeddedImages.Count}");
+                        foreach (var img in embeddedImages)
+                        {
+                            _output.WriteLine($"      cid:{img.ContentId?.Trim('<', '>')} - {img.FileName}");
+                        }
+                    }
+                }
             }
         }
         finally
