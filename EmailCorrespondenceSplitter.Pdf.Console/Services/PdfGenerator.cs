@@ -1,8 +1,6 @@
 using iText.Kernel.Pdf;
 using iText.Layout;
 using iText.Layout.Element;
-using iText.Layout.Properties;
-using iText.Kernel.Colors;
 using iText.Kernel.Font;
 using iText.IO.Font.Constants;
 
@@ -10,11 +8,13 @@ namespace EmailCorrespondenceSplitter.Pdf.Console.Services;
 
 /// <summary>
 /// Service to generate PDF files from email correspondences using iText7
+/// PDF contains only the raw email content without extra formatting or labels
 /// </summary>
 public class PdfGenerator
 {
     /// <summary>
     /// Generate a PDF file for a single correspondence
+    /// Contains only the email content as it appears in the original message
     /// </summary>
     /// <param name="correspondence">The correspondence to convert to PDF</param>
     /// <param name="outputPath">Path where the PDF should be saved</param>
@@ -37,43 +37,10 @@ public class PdfGenerator
             pdf = new PdfDocument(writer);
             document = new Document(pdf);
 
-            // Set up fonts
-            var boldFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
+            // Set up font - simple regular font for plain text
             var regularFont = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
 
-            // Title
-            var title = new Paragraph($"Correspondence #{correspondence.Index + 1}")
-                .SetFont(boldFont)
-                .SetFontSize(16)
-                .SetFontColor(ColorConstants.BLUE)
-                .SetMarginBottom(20);
-            document.Add(title);
-
-            // Subject
-            AddLabelValuePair(document, "Subject:", correspondence.Subject, boldFont, regularFont);
-
-            // From
-            AddLabelValuePair(document, "From:", correspondence.From, boldFont, regularFont);
-
-            // To
-            AddLabelValuePair(document, "To:", correspondence.To, boldFont, regularFont);
-
-            // Date
-            if (correspondence.SentDate.HasValue)
-            {
-                AddLabelValuePair(document, "Date:", 
-                    correspondence.SentDate.Value.ToString("yyyy-MM-dd HH:mm:ss"), 
-                    boldFont, regularFont);
-            }
-
-            // Separator line
-            var separator = new Paragraph()
-                .SetMarginTop(15)
-                .SetMarginBottom(15)
-                .SetBorderTop(new iText.Layout.Borders.SolidBorder(ColorConstants.LIGHT_GRAY, 1));
-            document.Add(separator);
-
-            // Content
+            // Add only the email content - exactly as it appears in the original
             var content = new Paragraph(correspondence.Content)
                 .SetFont(regularFont)
                 .SetFontSize(10)
@@ -105,25 +72,6 @@ public class PdfGenerator
             try { pdf?.Close(); } catch { }
             try { writer?.Close(); } catch { }
         }
-    }
-
-    /// <summary>
-    /// Helper method to add label-value pairs to the document
-    /// </summary>
-    private void AddLabelValuePair(Document document, string label, string value, 
-        PdfFont boldFont, PdfFont regularFont)
-    {
-        var labelParagraph = new Paragraph(label)
-            .SetFont(boldFont)
-            .SetFontSize(11)
-            .SetMarginBottom(2);
-        document.Add(labelParagraph);
-
-        var valueParagraph = new Paragraph(value)
-            .SetFont(regularFont)
-            .SetFontSize(11)
-            .SetMarginBottom(10);
-        document.Add(valueParagraph);
     }
 
     /// <summary>
