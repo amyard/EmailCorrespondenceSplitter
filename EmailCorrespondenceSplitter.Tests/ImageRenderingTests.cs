@@ -142,4 +142,101 @@ public class ImageRenderingTests
             }
         }
     }
+    
+    [Fact]
+    public async Task EmailWithAttachments_ShouldExtractAndStoreAttachments()
+    {
+        // Arrange
+        var emailParser = new MsgEmailParser();
+        var correspondenceDetector = new CorrespondenceDetector();
+        var testOutputFolder = $"TestOutput_{Guid.NewGuid():N}";
+        var outputManager = new OutputManager(testOutputFolder);
+        var emailSplitter = new EmailSplitter(emailParser, correspondenceDetector, outputManager);
+        
+        // Try to find an email with attachments in Assets folder
+        var assetFiles = Directory.GetFiles("Assets", "*.msg");
+        
+        string? testEmailPath = null;
+        int originalAttachmentCount = 0;
+        
+        // Find an email with attachments
+        foreach (var assetFile in assetFiles)
+        {
+            var email = await emailParser.ParseAsync(assetFile);
+            if (email.Attachments.Count > 0)
+            {
+                testEmailPath = assetFile;
+                originalAttachmentCount = email.Attachments.Count;
+                _output.WriteLine($"Using test email: {Path.GetFileName(assetFile)}");
+                _output.WriteLine($"Original attachment count: {originalAttachmentCount}");
+                foreach (var att in email.Attachments)
+                {
+                    _output.WriteLine($"  - {att}");
+                }
+                break;
+            }
+        }
+        
+        // Skip test if no email with attachments found
+        if (testEmailPath == null)
+        {
+            _output.WriteLine("No email with attachments found in Assets folder. Skipping test.");
+            return;
+        }
+
+        try
+        {
+            // Act
+            var count = await emailSplitter.ProcessEmailAsync(testEmailPath);
+            
+            _output.WriteLine($"\nProcessed {count} correspondence(s)");
+            
+            // Check output files
+            var outputFolders = Directory.GetDirectories(testOutputFolder);
+            Assert.Single(outputFolders);
+            
+            var msgFiles = Directory.GetFiles(outputFolders[0], "*.msg");
+            _output.WriteLine($"Created {msgFiles.Length} MSG file(s)");
+            
+            // Verify at least one MSG file was created
+            Assert.True(msgFiles.Length > 0, "Should create MSG files");
+            
+            // Check that at least one correspondence has the attachments
+            bool foundAttachments = false;
+            _output.WriteLine("\n=== Checking created MSG files ===");
+            foreach (var file in msgFiles)
+            {
+                _output.WriteLine($"\n  {Path.GetFileName(file)}");
+                
+                using var msg = new MsgReader.Outlook.Storage.Message(file);
+                
+                if (msg.Attachments != null)
+                {
+                    // Filter out embedded images (those with ContentId)
+                    var regularAttachments = msg.Attachments
+                        .OfType<MsgReader.Outlook.Storage.Attachment>()
+                        .Where(a => string.IsNullOrWhiteSpace(a.ContentId))
+                        .ToList();
+                    
+                    _output.WriteLine($"    Regular attachments: {regularAttachments.Count}");
+                    
+                    foreach (var att in regularAttachments)
+                    {
+                        _output.WriteLine($"      - {att.FileName} ({att.Data?.Length ?? 0} bytes)");
+                        foundAttachments = true;
+                    }
+                }
+            }
+            
+            Assert.True(foundAttachments, "At least one correspondence should have regular attachments");
+        }
+        finally
+        {
+            // Cleanup
+            if (Directory.Exists(testOutputFolder))
+            {
+                Directory.Delete(testOutputFolder, true);
+            }
+        }
+    }
 }

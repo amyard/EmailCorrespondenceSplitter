@@ -76,8 +76,7 @@ public class OutputManager
                 email.SentOn = correspondence.SentOn.Value;
             }
             
-            // Set body (prefer HTML, fallback to text)
-            // Keep the original HTML content with cid: references intact
+            // Set body - keep the original content exactly as is
             if (!string.IsNullOrWhiteSpace(correspondence.HtmlContent))
             {
                 email.BodyHtml = correspondence.HtmlContent;
@@ -123,6 +122,46 @@ public class OutputManager
                     catch (Exception ex)
                     {
                         Console.WriteLine($"  Warning: Could not add embedded image cid:{contentId} to MSG: {ex.Message}");
+                    }
+                }
+            }
+            
+            // Add regular attachments with their original filenames
+            if (correspondence.Attachments.Count > 0)
+            {
+                foreach (var attachmentEntry in correspondence.Attachments)
+                {
+                    var originalFileName = attachmentEntry.Key;
+                    var fileData = attachmentEntry.Value;
+                    
+                    try
+                    {
+                        // Create a temporary file with the original filename
+                        var tempDir = Path.Combine(Path.GetTempPath(), $"EmailSplitter_{Guid.NewGuid():N}");
+                        Directory.CreateDirectory(tempDir);
+                        var tempAttachmentPath = Path.Combine(tempDir, originalFileName);
+                        File.WriteAllBytes(tempAttachmentPath, fileData);
+                        
+                        // Add as regular attachment (no contentId)
+                        // MsgKit will use the filename from the path
+                        email.Attachments.Add(tempAttachmentPath);
+                        
+                        Console.WriteLine($"  Added attachment: {originalFileName} ({fileData.Length} bytes)");
+                        
+                        // Clean up the temporary file and directory after adding to the email
+                        try
+                        {
+                            File.Delete(tempAttachmentPath);
+                            Directory.Delete(tempDir, true);
+                        }
+                        catch
+                        {
+                            // If deletion fails, it's not critical - temp folder will be cleaned eventually
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"  Warning: Could not add attachment {originalFileName} to MSG: {ex.Message}");
                     }
                 }
             }

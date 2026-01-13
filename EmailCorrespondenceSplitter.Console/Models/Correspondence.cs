@@ -50,4 +50,10 @@ public class Correspondence
     /// Key: Content-ID (cid:xxx), Value: Image data as byte array
     /// </summary>
     public Dictionary<string, byte[]> EmbeddedImages { get; set; } = new();
+    
+    /// <summary>
+    /// Regular attachments (non-embedded files)
+    /// Key: Filename, Value: File data as byte array
+    /// </summary>
+    public Dictionary<string, byte[]> Attachments { get; set; } = new();
 }

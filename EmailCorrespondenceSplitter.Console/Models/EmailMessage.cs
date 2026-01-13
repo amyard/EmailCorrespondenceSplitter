@@ -51,9 +51,15 @@ public class EmailMessage
     public string FilePath { get; set; } = string.Empty;
     
     /// <summary>
-    /// List of attachments
+    /// List of attachment filenames
     /// </summary>
     public List<string> Attachments { get; set; } = new();
+    
+    /// <summary>
+    /// Attachment data
+    /// Key: Filename, Value: File data as byte array
+    /// </summary>
+    public Dictionary<string, byte[]> AttachmentData { get; set; } = new();
     
     /// <summary>
     /// Embedded images from the email

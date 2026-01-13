@@ -75,7 +75,8 @@ public class CorrespondenceDetector
                 HtmlContent = mainContent,
                 TextContent = HtmlToPlainText(mainContent),
                 Index = 0,
-                IsParent = true
+                IsParent = true,
+                Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
             });
             
             // Process quoted sections
@@ -186,7 +187,8 @@ public class CorrespondenceDetector
                     TextContent = HtmlToPlainText(mainContent),
                     Index = 0,
                     IsParent = true,
-                    EmbeddedImages = imagesForCorrespondence
+                    EmbeddedImages = imagesForCorrespondence,
+                    Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
                 });
             }
             
@@ -412,7 +414,8 @@ public class CorrespondenceDetector
                     HtmlContent = mainContent,
                     TextContent = HtmlToPlainText(mainContent),
                     Index = 0,
-                    IsParent = true
+                    IsParent = true,
+                    Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
                 });
             }
             
@@ -475,7 +478,8 @@ public class CorrespondenceDetector
                 HtmlContent = mainContent,
                 TextContent = HtmlToPlainText(mainContent),
                 Index = 0,
-                IsParent = true
+                IsParent = true,
+                Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
             });
             
             // Process quoted sections
@@ -533,7 +537,8 @@ public class CorrespondenceDetector
                 HtmlContent = mainContent,
                 TextContent = HtmlToPlainText(mainContent),
                 Index = 0,
-                IsParent = true
+                IsParent = true,
+                Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
             });
             
             // Process quoted sections
@@ -664,7 +669,8 @@ public class CorrespondenceDetector
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
             IsParent = true,
-            EmbeddedImages = imagesForMain
+            EmbeddedImages = imagesForMain,
+            Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
         });
         
         // Extract content between and after separators
@@ -718,7 +724,8 @@ public class CorrespondenceDetector
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
             IsParent = true,
-            EmbeddedImages = imagesForMain
+            EmbeddedImages = imagesForMain,
+            Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
         });
         
         // Process quoted sections
@@ -767,7 +774,8 @@ public class CorrespondenceDetector
             TextContent = HtmlToPlainText(mainContent),
             Index = 0,
             IsParent = true,
-            EmbeddedImages = imagesForMain
+            EmbeddedImages = imagesForMain,
+            Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
         });
         
         // Extract content after each marker
@@ -865,7 +873,8 @@ public class CorrespondenceDetector
                     HtmlContent = mainContent,
                     TextContent = HtmlToPlainText(mainContent),
                     Index = 0,
-                    IsParent = true
+                    IsParent = true,
+                    Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
                 });
                 
                 // Process each top-level blockquote - extract content before any nested blockquotes
@@ -1007,7 +1016,8 @@ public class CorrespondenceDetector
                     TextContent = HtmlToPlainText(sections[i]),
                     Index = i,
                     IsParent = i == 0,
-                    EmbeddedImages = imagesForCorrespondence
+                    EmbeddedImages = imagesForCorrespondence,
+                    Attachments = i == 0 ? new Dictionary<string, byte[]>(email.AttachmentData) : new Dictionary<string, byte[]>()
                 });
             }
         }
@@ -1150,7 +1160,8 @@ public class CorrespondenceDetector
             TextContent = email.TextBody,
             Index = 0,
             IsParent = true,
-            EmbeddedImages = new Dictionary<string, byte[]>(email.EmbeddedImages)
+            EmbeddedImages = new Dictionary<string, byte[]>(email.EmbeddedImages),
+            Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
         };
     }
     

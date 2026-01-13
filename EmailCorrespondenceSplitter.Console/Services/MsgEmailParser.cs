@@ -110,25 +110,52 @@ public class MsgEmailParser : IEmailParser
             {
                 foreach (var attachment in msg.Attachments)
                 {
-                    if (attachment is Storage.Attachment att)
+                    if (attachment is Storage.Attachment att && att.Data != null)
                     {
-                        // Check if this is an embedded image (has ContentId)
                         var contentId = att.ContentId;
+                        var fileName = att.FileName ?? $"Unnamed_Attachment_{emailMessage.Attachments.Count + 1}";
                         
-                        if (!string.IsNullOrWhiteSpace(contentId) && att.Data != null)
+                        // Determine if this is an embedded image or regular attachment
+                        // An embedded image must have:
+                        // 1. A ContentId
+                        // 2. Be referenced in the HTML body (cid: reference)
+                        // 3. Typically be an image file type
+                        bool isEmbeddedImage = false;
+                        
+                        if (!string.IsNullOrWhiteSpace(contentId))
+                        {
+                            var cleanContentId = contentId.Trim('<', '>');
+                            
+                            // Check if this ContentId is referenced in the HTML body
+                            if (!string.IsNullOrEmpty(htmlBody) && 
+                                htmlBody.Contains($"cid:{cleanContentId}", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // It's referenced in HTML, so it's an embedded image
+                                isEmbeddedImage = true;
+                            }
+                        }
+                        
+                        if (isEmbeddedImage)
                         {
                             // This is an embedded image
-                            // Remove angle brackets if present (e.g., <image001.png@01D9565A.226155F0> -> image001.png@01D9565A.226155F0)
-                            var cleanContentId = contentId.Trim('<', '>');
+                            var cleanContentId = contentId!.Trim('<', '>');
                             emailMessage.EmbeddedImages[cleanContentId] = att.Data;
-                            
                             Console.WriteLine($"  Found embedded image: cid:{cleanContentId} ({att.Data.Length} bytes)");
                         }
                         else
                         {
-                            // Regular attachment
-                            emailMessage.Attachments.Add(att.FileName ?? "Unnamed Attachment");
+                            // Regular attachment (even if it has a ContentId, it's not referenced in HTML)
+                            emailMessage.Attachments.Add(fileName);
+                            emailMessage.AttachmentData[fileName] = att.Data;
+                            Console.WriteLine($"  Found attachment: {fileName} ({att.Data.Length} bytes)");
                         }
+                    }
+                    else if (attachment is Storage.Attachment attNoData)
+                    {
+                        // Attachment without data (shouldn't happen, but handle gracefully)
+                        var fileName = attNoData.FileName ?? $"Unnamed_Attachment_{emailMessage.Attachments.Count + 1}";
+                        emailMessage.Attachments.Add(fileName);
+                        Console.WriteLine($"  Warning: Found attachment {fileName} but no data available");
                     }
                 }
             }
