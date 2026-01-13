@@ -1,0 +1,153 @@
+# Folder Structure Overview
+
+## Input Structure
+
+```
+Assets/
+??? em1.msg
+??? em2.msg
+??? em3.msg
+??? em4.msg
+??? em5.msg
+??? em6.msg
+```
+
+## Output Structure
+
+After running the application, the Output folder will be organized as follows:
+
+```
+Output/
+??? em1/                          # Folder for em1.msg
+?   ??? correspondence_1.pdf      # Most recent correspondence
+?   ??? correspondence_2.pdf      # Previous correspondence
+?   ??? correspondence_3.pdf      # Oldest correspondence
+?
+??? em2/                          # Folder for em2.msg
+?   ??? correspondence.pdf        # Single correspondence
+?
+??? em3/                          # Folder for em3.msg
+?   ??? correspondence_1.pdf
+?   ??? correspondence_2.pdf
+?
+??? em4/                          # Folder for em4.msg
+?   ??? correspondence_1.pdf
+?   ??? correspondence_2.pdf
+?   ??? correspondence_3.pdf
+?   ??? correspondence_4.pdf
+?
+??? em5/                          # Folder for em5.msg
+?   ??? correspondence.pdf
+?
+??? em6/                          # Folder for em6.msg
+    ??? correspondence_1.pdf
+    ??? correspondence_2.pdf
+```
+
+## Benefits of Folder Structure
+
+### ? Organization
+- Each email gets its own dedicated folder
+- Easy to identify which PDFs belong to which email
+- Clean separation between different email threads
+
+### ? Scalability
+- Works well with large numbers of emails
+- No file naming conflicts
+- Easy to archive or share individual email threads
+
+### ? Maintenance
+- Simple to delete an entire email thread (just delete the folder)
+- Easy to add new correspondences to an existing email
+- Clear structure for automation and scripting
+
+## Correspondence Numbering
+
+Within each email folder:
+- **Index 0** (correspondence_1.pdf): Most recent email in the thread
+- **Index 1** (correspondence_2.pdf): Previous email
+- **Index N** (correspondence_N+1.pdf): Oldest email in the thread
+
+## Example Scenarios
+
+### Single Correspondence
+```
+Input:  em2.msg (single email, no replies)
+Output: em2/correspondence.pdf
+```
+
+### Email Thread with 3 Replies
+```
+Input:  em1.msg (original email + 2 replies)
+Output: em1/
+        ??? correspondence_1.pdf  (Latest reply)
+        ??? correspondence_2.pdf  (First reply)
+        ??? correspondence_3.pdf  (Original email)
+```
+
+### Forwarded Email Chain
+```
+Input:  em4.msg (forwarded email containing multiple messages)
+Output: em4/
+        ??? correspondence_1.pdf  (Forwarding message)
+        ??? correspondence_2.pdf  (Forwarded email)
+        ??? correspondence_3.pdf  (Previous reply)
+        ??? correspondence_4.pdf  (Original message)
+```
+
+## Processing Flow
+
+```
+???????????????????
+?   Assets/       ?
+?   ??? em1.msg   ?
+?   ??? em2.msg   ?
+?   ??? em3.msg   ?
+???????????????????
+         ?
+         ?
+???????????????????????????????????
+?  EmailCorrespondenceSplitter    ?
+?  ????????????????????????????   ?
+?  ? 1. Read MSG file         ?   ?
+?  ? 2. Extract text content  ?   ?
+?  ? 3. Split by "From:"      ?   ?
+?  ? 4. Create email folder   ?   ?
+?  ? 5. Generate PDFs         ?   ?
+?  ????????????????????????????   ?
+???????????????????????????????????
+                ?
+                ?
+???????????????????????????????????
+?   Output/                       ?
+?   ??? em1/                      ?
+?   ?   ??? correspondence_1.pdf  ?
+?   ?   ??? correspondence_2.pdf  ?
+?   ?   ??? correspondence_3.pdf  ?
+?   ??? em2/                      ?
+?   ?   ??? correspondence.pdf    ?
+?   ??? em3/                      ?
+?       ??? correspondence_1.pdf  ?
+?       ??? correspondence_2.pdf  ?
+???????????????????????????????????
+```
+
+## File System Impact
+
+### Disk Space
+- Each PDF typically ranges from 10KB to 500KB depending on content length
+- Folder overhead is minimal (4KB per folder on NTFS)
+- Total space = (Number of correspondences × Average PDF size) + Folder overhead
+
+### Performance
+- Fast folder creation (O(1) operation)
+- Parallel processing possible (each email is independent)
+- No file locking conflicts between different emails
+
+## Best Practices
+
+1. **Keep email names meaningful**: Use descriptive names for MSG files before processing
+2. **Archive periodically**: Move processed folders to archive directory
+3. **Backup**: The folder structure makes it easy to backup specific email threads
+4. **Search**: Use OS search tools to find PDFs across all email folders
+5. **Version control**: Folder structure works well with version control systems
