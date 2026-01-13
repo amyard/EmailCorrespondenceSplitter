@@ -4,6 +4,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter.Tests", "EmailCorrespondenceSplitter.Tests\EmailCorrespondenceSplitter.Tests.csproj", "{E2BF6961-9F18-4003-8C86-3BECDB2DE842}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter.Pdf.Console", "EmailCorrespondenceSplitter.Pdf.Console\EmailCorrespondenceSplitter.Pdf.Console.csproj", "{92D72AB9-40EA-4F46-8E21-638C957303B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EmailCorrespondenceSplitter.Pdf.Tests", "EmailCorrespondenceSplitter.Pdf.Tests\EmailCorrespondenceSplitter.Pdf.Tests.csproj", "{6C9B21EB-3D33-40A2-94CF-39F7D72AD5E4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +22,13 @@ Global
 		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E2BF6961-9F18-4003-8C86-3BECDB2DE842}.Release|Any CPU.Build.0 = Release|Any CPU
+		{92D72AB9-40EA-4F46-8E21-638C957303B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{92D72AB9-40EA-4F46-8E21-638C957303B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{92D72AB9-40EA-4F46-8E21-638C957303B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{92D72AB9-40EA-4F46-8E21-638C957303B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6C9B21EB-3D33-40A2-94CF-39F7D72AD5E4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6C9B21EB-3D33-40A2-94CF-39F7D72AD5E4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6C9B21EB-3D33-40A2-94CF-39F7D72AD5E4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6C9B21EB-3D33-40A2-94CF-39F7D72AD5E4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
