@@ -91,7 +91,7 @@ public class CorrespondenceDetector
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From, // Assuming reply chain
                     SentOn = metadata.Date,
-                    Subject = email.Subject,
+                    Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = index++,
@@ -257,7 +257,7 @@ public class CorrespondenceDetector
                             From = metadata.From ?? "Unknown",
                             To = metadata.To ?? email.From,
                             SentOn = metadata.Date,
-                            Subject = email.Subject,
+                            Subject = metadata.Subject ?? email.Subject,
                             HtmlContent = quotedContent,
                             TextContent = HtmlToPlainText(quotedContent),
                             Index = correspondences.Count,
@@ -290,45 +290,19 @@ public class CorrespondenceDetector
             if (emailSeparators.Count > 0)
             {
                 // For border-top divs in Outlook emails:
-                // The div contains the PARENT email's metadata header (From, Sent, To, Subject)
-                // This is a visual separator that shows "this is the end of the parent email"
+                // The div contains metadata header (From, Date, To, Subject) for the QUOTED email
+                // This is a visual separator showing the start of the quoted/forwarded message
                 // Structure:
                 //   - Parent email body
-                //   - Border-top div with parent's metadata
+                //   - Border-top div with QUOTED email's metadata (From: Richard Canterbury, Date: ...)
                 //   - Quoted email content
                 // So we split:
-                //   - First correspondence = everything UP TO AND INCLUDING the div
-                //   - Second correspondence = everything AFTER the div
+                //   - First correspondence = everything BEFORE the div (not including it)
+                //   - Second correspondence = the div AND everything after it
                 var separator = emailSeparators[0];
                 
-                // Extract parent email content including the separator div
-                var mainContent = new System.Text.StringBuilder();
-                bool foundSeparator = false;
-                
-                foreach (var node in doc.DocumentNode.ChildNodes)
-                {
-                    if (node == separator || ContainsNode(node, separator))
-                    {
-                        // Include content up to and including the separator
-                        if (ContainsNode(node, separator))
-                        {
-                            // The separator is nested inside this node
-                            // We need to extract content up to and including the separator
-                            ExtractUpToAndIncludingNode(node, separator, mainContent);
-                        }
-                        else
-                        {
-                            // The node IS the separator
-                            mainContent.Append(node.OuterHtml);
-                        }
-                        foundSeparator = true;
-                        break;
-                    }
-                    else
-                    {
-                        mainContent.Append(node.OuterHtml);
-                    }
-                }
+                // Extract parent email content (everything before the separator div)
+                var mainContent = ExtractAllContentBeforeSeparator(doc, separator);
                 
                 correspondences.Add(new Correspondence
                 {
@@ -336,16 +310,17 @@ public class CorrespondenceDetector
                     To = email.To,
                     SentOn = email.SentOn,
                     Subject = email.Subject,
-                    HtmlContent = mainContent.ToString(),
-                    TextContent = HtmlToPlainText(mainContent.ToString()),
+                    HtmlContent = mainContent,
+                    TextContent = HtmlToPlainText(mainContent),
                     Index = 0,
                     IsParent = true,
-                    EmbeddedImages = ExtractImagesForHtmlContent(mainContent.ToString(), email.EmbeddedImages),
+                    EmbeddedImages = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages),
                     Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
                 });
                 
-                // Extract the quoted email (everything AFTER the div, not including the div)
-                var quotedContent = ExtractContentAfterNode(separator);
+                // Extract the quoted email (the separator div AND everything after it)
+                // The separator div contains the metadata for the quoted email
+                var quotedContent = separator.OuterHtml + ExtractContentAfterNode(separator);
                 if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
                     var metadata = ExtractEmailMetadata(quotedContent);
@@ -354,7 +329,7 @@ public class CorrespondenceDetector
                         From = metadata.From ?? "Unknown",
                         To = metadata.To ?? email.From,
                         SentOn = metadata.Date,
-                        Subject = email.Subject,
+                        Subject = metadata.Subject ?? email.Subject,
                         HtmlContent = quotedContent,
                         TextContent = HtmlToPlainText(quotedContent),
                         Index = 1,
@@ -605,7 +580,7 @@ public class CorrespondenceDetector
                         From = metadata.From ?? "Unknown",
                         To = metadata.To ?? email.From,
                         SentOn = metadata.Date,
-                        Subject = email.Subject,
+                        Subject = metadata.Subject ?? email.Subject,
                         HtmlContent = quotedContent,
                         TextContent = HtmlToPlainText(quotedContent),
                         Index = correspondences.Count,
@@ -665,7 +640,7 @@ public class CorrespondenceDetector
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
                     SentOn = metadata.Date,
-                    Subject = email.Subject,
+                    Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = index++,
@@ -724,7 +699,7 @@ public class CorrespondenceDetector
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
                     SentOn = metadata.Date,
-                    Subject = email.Subject,
+                    Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = index++,
@@ -860,7 +835,7 @@ public class CorrespondenceDetector
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
                     SentOn = metadata.Date,
-                    Subject = email.Subject,
+                    Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = i + 1,
@@ -912,7 +887,7 @@ public class CorrespondenceDetector
                 From = metadata.From ?? "Unknown",
                 To = metadata.To ?? email.From,
                 SentOn = metadata.Date,
-                Subject = email.Subject,
+                Subject = metadata.Subject ?? email.Subject,
                 HtmlContent = quotedContent,
                 TextContent = HtmlToPlainText(quotedContent),
                 Index = index++,
@@ -965,7 +940,7 @@ public class CorrespondenceDetector
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
                     SentOn = metadata.Date,
-                    Subject = email.Subject,
+                    Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
                     TextContent = HtmlToPlainText(quotedContent),
                     Index = index++,
@@ -1090,7 +1065,7 @@ public class CorrespondenceDetector
                         From = metadata.From ?? "Unknown",
                         To = metadata.To ?? email.From,
                         SentOn = metadata.Date,
-                        Subject = email.Subject,
+                        Subject = metadata.Subject ?? email.Subject,
                         HtmlContent = quotedContent,
                         TextContent = HtmlToPlainText(quotedContent),
                         Index = index++,
@@ -1204,20 +1179,22 @@ public class CorrespondenceDetector
     }
     
     /// <summary>
-    /// Extract email metadata (From, To, Date) from HTML content
+    /// Extract email metadata (From, To, Date, Subject) from HTML content
     /// </summary>
-    private (string? From, string? To, DateTime? Date) ExtractEmailMetadata(string htmlContent)
+    private (string? From, string? To, DateTime? Date, string? Subject) ExtractEmailMetadata(string htmlContent)
     {
         string? from = null;
         string? to = null;
         DateTime? date = null;
+        string? subject = null;
         
         // Remove HTML tags for easier parsing
         var text = HtmlToPlainText(htmlContent);
         
         // Extract From - try multiple patterns
         // Pattern 1: "From: name <email>" or "From: name"
-        var fromMatch = Regex.Match(text, @"From:\s*(.+?)(?:\r?\n|Sent:|To:|Subject:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        // Stop at: Sent, Date, To, Subject, Cc, or end of string
+        var fromMatch = Regex.Match(text, @"From:\s*(.+?)(?:\r?\n|Sent:|Date:|To:|Subject:|Cc:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (fromMatch.Success)
         {
             from = fromMatch.Groups[1].Value.Trim();
@@ -1226,7 +1203,8 @@ public class CorrespondenceDetector
         }
         
         // Extract To
-        var toMatch = Regex.Match(text, @"To:\s*(.+?)(?:\r?\n|Cc:|Subject:|Sent:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        // Stop at: Cc, Subject, Sent, Date, or end of string
+        var toMatch = Regex.Match(text, @"To:\s*(.+?)(?:\r?\n|Cc:|Subject:|Sent:|Date:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (toMatch.Success)
         {
             to = toMatch.Groups[1].Value.Trim();
@@ -1234,17 +1212,40 @@ public class CorrespondenceDetector
         }
         
         // Extract Date/Sent - try multiple patterns
-        var dateMatch = Regex.Match(text, @"(?:Sent|Date):\s*(.+?)(?:\r?\n|To:|From:|Subject:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        // Look for both "Sent:" and "Date:" fields
+        // Stop at: To, From, Subject, Cc, or end of string
+        var dateMatch = Regex.Match(text, @"(?:Sent|Date):\s*(.+?)(?:\r?\n|To:|From:|Subject:|Cc:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (dateMatch.Success)
         {
             var dateStr = dateMatch.Groups[1].Value.Trim();
+            
+            // Try standard parsing first
             if (DateTime.TryParse(dateStr, out var parsedDate))
             {
                 date = parsedDate;
             }
+            else
+            {
+                // Try parsing formats like "Tuesday, 8 April 2025 at 15:22"
+                // Remove "at" and try again
+                var cleanedDateStr = dateStr.Replace(" at ", " ");
+                if (DateTime.TryParse(cleanedDateStr, out parsedDate))
+                {
+                    date = parsedDate;
+                }
+            }
         }
         
-        return (from, to, date);
+        // Extract Subject
+        // Stop at: next line, From, To, Date, Sent, Cc, or end of string
+        var subjectMatch = Regex.Match(text, @"Subject:\s*(.+?)(?:\r?\n|From:|To:|Date:|Sent:|Cc:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (subjectMatch.Success)
+        {
+            subject = subjectMatch.Groups[1].Value.Trim();
+            subject = Regex.Replace(subject, @"\s+", " ");
+        }
+        
+        return (from, to, date, subject);
     }
     
     /// <summary>
@@ -1392,3 +1393,4 @@ public class CorrespondenceDetector
         return doc.DocumentNode.InnerText;
     }
 }
+

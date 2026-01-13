@@ -13,6 +13,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <None Include="AssetsTests\**\*" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
+    <ItemGroup>
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
         <PackageReference Include="MsgKit" Version="3.0.2" />
         <PackageReference Include="MsgReader" Version="6.0.6" />
