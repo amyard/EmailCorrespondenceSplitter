@@ -52,12 +52,12 @@ public class CorrespondenceExtractionTests
     /// <param name="emailPath">Path to the email file (relative to test output directory)</param>
     /// <param name="expectedCount">Expected number of correspondences to be extracted</param>
     [Theory]
-    [InlineData("Assets/em1.msg", 1)]
-    [InlineData("Assets/em2.msg", 1)]
-    [InlineData("Assets/em3.msg", 1)]
-    [InlineData("Assets/em4.msg", 1)]
-    [InlineData("Assets/em5.msg", 1)]
-    [InlineData("Assets/em6.msg", 1)]
+    [InlineData("Assets/em1.msg", 2)]
+    [InlineData("Assets/em2.msg", 2)]
+    [InlineData("Assets/em3.msg", 8)]
+    [InlineData("Assets/em4.msg", 24)]
+    [InlineData("Assets/em5.msg", 2)]
+    [InlineData("Assets/em6.msg", 4)]
     public async Task ProcessEmailWithSplitter_ShouldReturnExpectedCount(string emailPath, int expectedCount)
     {
         // Arrange
@@ -80,8 +80,8 @@ public class CorrespondenceExtractionTests
     /// <param name="emailPath">Path to the email file</param>
     /// <param name="expectedCount">Expected number of correspondence files</param>
     [Theory]
-    [InlineData("Assets/em1.msg", 1)]
-    [InlineData("Assets/em2.msg", 1)]
+    [InlineData("Assets/em1.msg", 2)]
+    [InlineData("Assets/em2.msg", 2)]
     public async Task ProcessEmailWithSplitter_ShouldCreateIndividualCorrespondenceFiles(string emailPath, int expectedCount)
     {
         // Arrange
@@ -127,9 +127,9 @@ public class CorrespondenceExtractionTests
     /// <param name="emailPath">Path to the email file</param>
     /// <param name="expectedCount">Expected number of correspondence files</param>
     [Theory]
-    [InlineData("Assets/em1.msg", 1)]
-    [InlineData("Assets/em2.msg", 1)]
-    [InlineData("Assets/em6.msg", 3)]
+    [InlineData("Assets/em1.msg", 2)]
+    [InlineData("Assets/em2.msg", 2)]
+    [InlineData("Assets/em6.msg", 4)]
     public async Task ProcessEmailWithSplitter_ShouldCreateIndividualCorrespondenceMsgFiles(string emailPath, int expectedCount)
     {
         // Arrange

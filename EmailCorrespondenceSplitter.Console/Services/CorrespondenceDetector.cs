@@ -271,6 +271,102 @@ public class CorrespondenceDetector
             return correspondences;
         }
         
+        // No HR separators found, check for div separators with border-top style
+        // This is common in Outlook emails: <div style="border:none;border-top:solid #B5C4DF 1.0pt;...">
+        var borderTopDivs = doc.DocumentNode.SelectNodes("//div[contains(@style, 'border-top')]");
+        if (borderTopDivs != null && borderTopDivs.Count > 0)
+        {
+            // Filter to only get divs that likely represent email separators
+            // They typically have "border:none;border-top:" pattern
+            var emailSeparators = borderTopDivs
+                .Where(div => 
+                {
+                    var style = div.GetAttributeValue("style", "");
+                    return style.Contains("border:none", StringComparison.OrdinalIgnoreCase) && 
+                           style.Contains("border-top", StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+            
+            if (emailSeparators.Count > 0)
+            {
+                // For border-top divs in Outlook emails:
+                // The div contains the PARENT email's metadata header (From, Sent, To, Subject)
+                // This is a visual separator that shows "this is the end of the parent email"
+                // Structure:
+                //   - Parent email body
+                //   - Border-top div with parent's metadata
+                //   - Quoted email content
+                // So we split:
+                //   - First correspondence = everything UP TO AND INCLUDING the div
+                //   - Second correspondence = everything AFTER the div
+                var separator = emailSeparators[0];
+                
+                // Extract parent email content including the separator div
+                var mainContent = new System.Text.StringBuilder();
+                bool foundSeparator = false;
+                
+                foreach (var node in doc.DocumentNode.ChildNodes)
+                {
+                    if (node == separator || ContainsNode(node, separator))
+                    {
+                        // Include content up to and including the separator
+                        if (ContainsNode(node, separator))
+                        {
+                            // The separator is nested inside this node
+                            // We need to extract content up to and including the separator
+                            ExtractUpToAndIncludingNode(node, separator, mainContent);
+                        }
+                        else
+                        {
+                            // The node IS the separator
+                            mainContent.Append(node.OuterHtml);
+                        }
+                        foundSeparator = true;
+                        break;
+                    }
+                    else
+                    {
+                        mainContent.Append(node.OuterHtml);
+                    }
+                }
+                
+                correspondences.Add(new Correspondence
+                {
+                    From = email.From,
+                    To = email.To,
+                    SentOn = email.SentOn,
+                    Subject = email.Subject,
+                    HtmlContent = mainContent.ToString(),
+                    TextContent = HtmlToPlainText(mainContent.ToString()),
+                    Index = 0,
+                    IsParent = true,
+                    EmbeddedImages = ExtractImagesForHtmlContent(mainContent.ToString(), email.EmbeddedImages),
+                    Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
+                });
+                
+                // Extract the quoted email (everything AFTER the div, not including the div)
+                var quotedContent = ExtractContentAfterNode(separator);
+                if (!string.IsNullOrWhiteSpace(quotedContent))
+                {
+                    var metadata = ExtractEmailMetadata(quotedContent);
+                    correspondences.Add(new Correspondence
+                    {
+                        From = metadata.From ?? "Unknown",
+                        To = metadata.To ?? email.From,
+                        SentOn = metadata.Date,
+                        Subject = email.Subject,
+                        HtmlContent = quotedContent,
+                        TextContent = HtmlToPlainText(quotedContent),
+                        Index = 1,
+                        IsParent = false,
+                        EmbeddedImages = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages)
+                    });
+                }
+                
+                return correspondences;
+            }
+        }
+        
         // No HR separators found, try From: pattern as fallback
         if (fromMatches.Count > 0)
         {
@@ -377,6 +473,34 @@ public class CorrespondenceDetector
             {
                 // Target is in this child's subtree, recurse
                 ExtractBeforeNodeInSubtree(child, target, content);
+                return;
+            }
+            else
+            {
+                // This child is completely before the target
+                content.Append(child.OuterHtml);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Extract content from a subtree up to and including a target node
+    /// </summary>
+    private void ExtractUpToAndIncludingNode(HtmlNode node, HtmlNode target, System.Text.StringBuilder content)
+    {
+        foreach (var child in node.ChildNodes)
+        {
+            if (child == target)
+            {
+                // Found the target, include it and stop
+                content.Append(child.OuterHtml);
+                return;
+            }
+            
+            if (ContainsNode(child, target))
+            {
+                // Target is in this child's subtree, recurse
+                ExtractUpToAndIncludingNode(child, target, content);
                 return;
             }
             else
@@ -1048,8 +1172,6 @@ public class CorrespondenceDetector
         var splitPattern = @"(?=<(?:b|strong|span)(?:\s+[^>]*)?>From:</(?:b|strong|span)>)";
         var sections = Regex.Split(email.HtmlBody, splitPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
         
-        Console.WriteLine($"  SplitByFromPattern: Found {sections.Length} sections");
-        
         for (int i = 0; i < sections.Length; i++)
         {
             if (!string.IsNullOrWhiteSpace(sections[i]))
@@ -1075,8 +1197,6 @@ public class CorrespondenceDetector
                     EmbeddedImages = imagesForCorrespondence,
                     Attachments = i == 0 ? new Dictionary<string, byte[]>(email.AttachmentData) : new Dictionary<string, byte[]>()
                 });
-                
-                Console.WriteLine($"  Split section {i + 1}: From={fromAddress}");
             }
         }
         
@@ -1157,7 +1277,34 @@ public class CorrespondenceDetector
         {
             // Stop at next separator
             if (currentNode.Name == "hr" || 
-                (currentNode.Attributes["style"]?.Value?.Contains("border-top") == true))
+                currentNode.Attributes["style"]?.Value?.Contains("border-top") == true)
+                break;
+                
+            content.Append(currentNode.OuterHtml);
+            currentNode = currentNode.NextSibling;
+        }
+        
+        return content.ToString();
+    }
+    
+    /// <summary>
+    /// Extract HTML content from a node and all its following siblings
+    /// </summary>
+    private string ExtractContentFromNode(HtmlNode node)
+    {
+        var content = new System.Text.StringBuilder();
+        
+        // Include the node itself
+        content.Append(node.OuterHtml);
+        
+        // Include all following siblings
+        var currentNode = node.NextSibling;
+        while (currentNode != null)
+        {
+            // Stop at next separator
+            if (currentNode.Name == "hr" || 
+                currentNode.Name == "div" && 
+                currentNode.Attributes["style"]?.Value?.Contains("border-top") == true)
                 break;
                 
             content.Append(currentNode.OuterHtml);
