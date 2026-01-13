@@ -123,6 +123,23 @@ public class CorrespondenceDetector
             }
         }
         
+        // Check for multiple "From:" patterns which indicates forwarded email chain
+        // This should be checked BEFORE HR separators because HR might be in signatures
+        // Match various formats: <b>From:</b>, <strong>From:</strong>, <span>From:</span>, etc.
+        var fromPattern = @"(?:<(?:b|strong|span)(?:\s+[^>]*)?>)From:(?:</(?:b|strong|span)>)";
+        var fromMatches = Regex.Matches(email.HtmlBody, fromPattern, RegexOptions.IgnoreCase);
+        
+        // If there are multiple "From:" patterns (more than just the email header),
+        // use From-pattern splitting
+        if (fromMatches.Count >= 2)
+        {
+            var result = SplitByFromPattern(email);
+            if (result.Count >= 2)
+            {
+                return result;
+            }
+        }
+        
         // Outlook uses <hr> or specific divs to separate emails
         // Important: Only select top-level HR tags, not nested ones within quoted content
         // Nested HRs (inside divRplyFwdMsg, mail-editor-reference-message-container) should not split correspondences
@@ -200,34 +217,64 @@ public class CorrespondenceDetector
                 
                 if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
-                    var metadata = ExtractEmailMetadata(quotedContent);
-                    var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
+                    // Check if this section contains multiple "From:" patterns
+                    // If so, split it further using From-pattern splitting
+                    var fromInSection = Regex.Matches(quotedContent, fromPattern, RegexOptions.IgnoreCase);
                     
-                    correspondences.Add(new Correspondence
+                    if (fromInSection.Count >= 2)
                     {
-                        From = metadata.From ?? "Unknown",
-                        To = metadata.To ?? email.From,
-                        SentOn = metadata.Date,
-                        Subject = email.Subject,
-                        HtmlContent = quotedContent,
-                        TextContent = HtmlToPlainText(quotedContent),
-                        Index = correspondences.Count,
-                        IsParent = false,
-                        EmbeddedImages = imagesForCorrespondence
-                    });
+                        // This section contains multiple emails, split them
+                        var subEmail = new EmailMessage
+                        {
+                            HtmlBody = quotedContent,
+                            From = email.From,
+                            To = email.To,
+                            Subject = email.Subject,
+                            SentOn = email.SentOn,
+                            EmailType = email.EmailType,
+                            EmbeddedImages = email.EmbeddedImages,
+                            AttachmentData = new Dictionary<string, byte[]>() // No attachments for sub-sections
+                        };
+                        
+                        var subCorrespondences = SplitByFromPattern(subEmail);
+                        
+                        // Add sub-correspondences with proper indexing
+                        foreach (var subCorr in subCorrespondences)
+                        {
+                            subCorr.Index = correspondences.Count;
+                            subCorr.IsParent = false; // These are all quoted emails
+                            correspondences.Add(subCorr);
+                        }
+                    }
+                    else
+                    {
+                        // Single email in this section
+                        var metadata = ExtractEmailMetadata(quotedContent);
+                        var imagesForCorrespondence = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages);
+                        
+                        correspondences.Add(new Correspondence
+                        {
+                            From = metadata.From ?? "Unknown",
+                            To = metadata.To ?? email.From,
+                            SentOn = metadata.Date,
+                            Subject = email.Subject,
+                            HtmlContent = quotedContent,
+                            TextContent = HtmlToPlainText(quotedContent),
+                            Index = correspondences.Count,
+                            IsParent = false,
+                            EmbeddedImages = imagesForCorrespondence
+                        });
+                    }
                 }
             }
-        }
-        else
-        {
-            // Look for "From:" pattern which is common in Outlook forwarded emails
-            var fromPattern = @"<b>From:</b>|<strong>From:</strong>|From:";
-            var matches = Regex.Matches(email.HtmlBody, fromPattern, RegexOptions.IgnoreCase);
             
-            if (matches.Count > 0)
-            {
-                correspondences = SplitByFromPattern(email);
-            }
+            return correspondences;
+        }
+        
+        // No HR separators found, try From: pattern as fallback
+        if (fromMatches.Count > 0)
+        {
+            correspondences = SplitByFromPattern(email);
         }
         
         return correspondences;
@@ -996,8 +1043,12 @@ public class CorrespondenceDetector
     {
         var correspondences = new List<Correspondence>();
         
-        // Pattern to match email headers in forwarded messages
-        var sections = Regex.Split(email.HtmlBody, @"(?=<b>From:</b>|<strong>From:</strong>|From:)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        // Enhanced pattern to match various "From:" formats in HTML
+        // Matches: <b>From:</b>, <strong>From:</strong>, <span ...>From:</span>, etc.
+        var splitPattern = @"(?=<(?:b|strong|span)(?:\s+[^>]*)?>From:</(?:b|strong|span)>)";
+        var sections = Regex.Split(email.HtmlBody, splitPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        
+        Console.WriteLine($"  SplitByFromPattern: Found {sections.Length} sections");
         
         for (int i = 0; i < sections.Length; i++)
         {
@@ -1006,11 +1057,16 @@ public class CorrespondenceDetector
                 var metadata = ExtractEmailMetadata(sections[i]);
                 var imagesForCorrespondence = ExtractImagesForHtmlContent(sections[i], email.EmbeddedImages);
                 
+                // For the first section, use email header info if metadata extraction fails
+                var fromAddress = metadata.From ?? (i == 0 ? email.From : "Unknown");
+                var toAddress = metadata.To ?? (i == 0 ? email.To : email.From);
+                var sentDate = metadata.Date ?? (i == 0 ? email.SentOn : null);
+                
                 correspondences.Add(new Correspondence
                 {
-                    From = metadata.From ?? (i == 0 ? email.From : "Unknown"),
-                    To = metadata.To ?? (i == 0 ? email.To : email.From),
-                    SentOn = metadata.Date ?? (i == 0 ? email.SentOn : null),
+                    From = fromAddress,
+                    To = toAddress,
+                    SentOn = sentDate,
                     Subject = email.Subject,
                     HtmlContent = sections[i],
                     TextContent = HtmlToPlainText(sections[i]),
@@ -1019,6 +1075,8 @@ public class CorrespondenceDetector
                     EmbeddedImages = imagesForCorrespondence,
                     Attachments = i == 0 ? new Dictionary<string, byte[]>(email.AttachmentData) : new Dictionary<string, byte[]>()
                 });
+                
+                Console.WriteLine($"  Split section {i + 1}: From={fromAddress}");
             }
         }
         
@@ -1037,25 +1095,33 @@ public class CorrespondenceDetector
         // Remove HTML tags for easier parsing
         var text = HtmlToPlainText(htmlContent);
         
-        // Extract From
-        var fromMatch = Regex.Match(text, @"From:\s*(.+?)(?:\r?\n|$)", RegexOptions.IgnoreCase);
+        // Extract From - try multiple patterns
+        // Pattern 1: "From: name <email>" or "From: name"
+        var fromMatch = Regex.Match(text, @"From:\s*(.+?)(?:\r?\n|Sent:|To:|Subject:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (fromMatch.Success)
         {
             from = fromMatch.Groups[1].Value.Trim();
+            // Clean up any extra whitespace or line breaks
+            from = Regex.Replace(from, @"\s+", " ");
         }
         
         // Extract To
-        var toMatch = Regex.Match(text, @"To:\s*(.+?)(?:\r?\n|$)", RegexOptions.IgnoreCase);
+        var toMatch = Regex.Match(text, @"To:\s*(.+?)(?:\r?\n|Cc:|Subject:|Sent:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         if (toMatch.Success)
         {
             to = toMatch.Groups[1].Value.Trim();
+            to = Regex.Replace(to, @"\s+", " ");
         }
         
-        // Extract Date/Sent
-        var dateMatch = Regex.Match(text, @"(?:Sent|Date):\s*(.+?)(?:\r?\n|$)", RegexOptions.IgnoreCase);
-        if (dateMatch.Success && DateTime.TryParse(dateMatch.Groups[1].Value, out var parsedDate))
+        // Extract Date/Sent - try multiple patterns
+        var dateMatch = Regex.Match(text, @"(?:Sent|Date):\s*(.+?)(?:\r?\n|To:|From:|Subject:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (dateMatch.Success)
         {
-            date = parsedDate;
+            var dateStr = dateMatch.Groups[1].Value.Trim();
+            if (DateTime.TryParse(dateStr, out var parsedDate))
+            {
+                date = parsedDate;
+            }
         }
         
         return (from, to, date);
