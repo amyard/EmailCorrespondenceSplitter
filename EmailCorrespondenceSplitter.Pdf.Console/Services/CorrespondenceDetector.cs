@@ -193,31 +193,25 @@ public class CorrespondenceDetector
             HtmlNode? nextSeparator = i < allSeparators.Count - 1 ? allSeparators[i + 1].Node : null;
 
             string quotedContent;
+            (string? From, string? To, string? Cc, DateTime? Date, string? Subject) metadata;
 
             if (separatorType == "border-top")
             {
-                // Border-top div contains the content
-                if (nextSeparator != null && ContainsNode(separator, nextSeparator))
-                {
-                    // Next separator is inside this one - extract content before it
-                    quotedContent = ExtractContentFromSeparatorToNext(separator, nextSeparator);
-                }
-                else
-                {
-                    // Extract all content from this separator
-                    quotedContent = separator.InnerHtml;
-                }
+                // For border-top divs:
+                // - Extract metadata from the header inside the border-top div
+                // - Extract body content from siblings after the div (excluding the header)
+                metadata = ExtractEmailMetadata(separator.InnerHtml);
+                quotedContent = ExtractBorderTopCorrespondence(separator, nextSeparator);
             }
             else
             {
-                // HR separator - content is after the HR
+                // HR separator - content is after the HR, and contains the header
                 quotedContent = ExtractContentAfterHrToNextSeparator(separator, nextSeparator);
+                metadata = ExtractEmailMetadata(quotedContent);
             }
 
             if (!string.IsNullOrWhiteSpace(quotedContent))
             {
-                var metadata = ExtractEmailMetadata(quotedContent);
-
                 correspondences.Add(new Correspondence
                 {
                     From = metadata.From ?? "Unknown",
@@ -235,6 +229,103 @@ public class CorrespondenceDetector
         }
 
         return correspondences;
+    }
+
+    /// <summary>
+    /// Extract content for a border-top separator correspondence.
+    /// The header is inside the border-top div (which we use for metadata extraction),
+    /// but the body content follows as siblings after the div or its parent wrapper.
+    /// We skip the header div content and only include the body from siblings.
+    /// </summary>
+    private string ExtractBorderTopCorrespondence(HtmlNode borderTopDiv, HtmlNode? nextSeparator)
+    {
+        var content = new StringBuilder();
+
+        // The border-top div may be wrapped in a parent div, like:
+        // <div><div style="border:none;border-top:...">header</div></div>
+        // <p>body content</p>
+        // We need to find the right starting point for sibling iteration
+        
+        HtmlNode? startNode = borderTopDiv;
+        
+        // Check if the border-top div is the only child of its parent
+        // If so, the body content is after the parent, not after the border-top div
+        if (borderTopDiv.ParentNode != null && 
+            borderTopDiv.ParentNode.Name == "div" &&
+            borderTopDiv.ParentNode.ChildNodes.Count(n => n.NodeType == HtmlNodeType.Element) == 1)
+        {
+            // The border-top div is wrapped - start from the wrapper's next sibling
+            startNode = borderTopDiv.ParentNode;
+        }
+
+        var currentNode = startNode.NextSibling;
+
+        while (currentNode != null)
+        {
+            // Check if we've reached the next separator
+            if (nextSeparator != null)
+            {
+                if (currentNode == nextSeparator)
+                    break;
+
+                // Check if this node contains the next separator
+                if (ContainsNode(currentNode, nextSeparator))
+                {
+                    // Extract content from this node up to the separator
+                    ExtractBeforeNodeInSubtree(currentNode, nextSeparator, content);
+                    break;
+                }
+            }
+
+            // Skip whitespace-only text nodes
+            if (currentNode.NodeType == HtmlNodeType.Text &&
+                string.IsNullOrWhiteSpace(currentNode.InnerText))
+            {
+                currentNode = currentNode.NextSibling;
+                continue;
+            }
+
+            // Check if this is another separator (border-top div or contains one)
+            if (currentNode.Name == "div")
+            {
+                var style = currentNode.GetAttributeValue("style", "");
+                if (style.Contains("border:none", StringComparison.OrdinalIgnoreCase) &&
+                    style.Contains("border-top", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                // Check if it contains a border-top separator
+                var innerBorderTop = currentNode.SelectSingleNode(".//div[contains(@style, 'border-top')]");
+                if (innerBorderTop != null)
+                {
+                    var innerStyle = innerBorderTop.GetAttributeValue("style", "");
+                    if (innerStyle.Contains("border:none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // This div contains a separator - extract content before it
+                        ExtractBeforeNodeInSubtree(currentNode, innerBorderTop, content);
+                        break;
+                    }
+                }
+
+                // Check if it contains an HR
+                var innerHr = currentNode.SelectSingleNode(".//hr");
+                if (innerHr != null)
+                {
+                    ExtractBeforeNodeInSubtree(currentNode, innerHr, content);
+                    break;
+                }
+            }
+
+            // Check if this is an HR separator
+            if (currentNode.Name == "hr")
+                break;
+
+            content.Append(currentNode.OuterHtml);
+            currentNode = currentNode.NextSibling;
+        }
+
+        return content.ToString();
     }
 
     /// <summary>

@@ -280,6 +280,8 @@ public class CorrespondenceDetectorTests
     [Fact]
     public void DetectCorrespondences_BorderTopDivFormat_SplitsCorrectly()
     {
+        // In real Outlook emails, the border-top div contains ONLY the header (From, Sent, To, Subject)
+        // The body content follows as siblings after the border-top div's parent wrapper
         var email = new EmailMessage
         {
             From = "sender@outlook.com",
@@ -294,9 +296,10 @@ public class CorrespondenceDetectorTests
                         <p><b>From:</b> Original Sender</p>
                         <p><b>Sent:</b> Monday, January 1, 2024</p>
                         <p><b>To:</b> Recipient</p>
-                        <p>Original message content</p>
+                        <p><b>Subject:</b> Test Subject</p>
                     </div>
-                </div>",
+                </div>
+                <p>Original message content</p>",
             EmailType = EmailType.Outlook
         };
 
@@ -304,5 +307,7 @@ public class CorrespondenceDetectorTests
 
         Assert.Equal(2, result.Count);
         Assert.True(result[0].IsParent);
+        Assert.Contains("Forwarding this to you", result[0].HtmlContent);
+        Assert.Contains("Original message content", result[1].HtmlContent);
     }
 }
