@@ -161,9 +161,7 @@ public class PdfOutputManager
                 color: #000000;
             }
             .email-header {
-                background-color: #f5f5f5;
-                border: 1px solid #dddddd;
-                padding: 10px 15px;
+                padding: 0;
                 margin-bottom: 20px;
             }
             .email-header p {
@@ -171,7 +169,6 @@ public class PdfOutputManager
             }
             .label {
                 font-weight: bold;
-                color: #333333;
             }
             .email-body {
                 padding: 10px 0;
