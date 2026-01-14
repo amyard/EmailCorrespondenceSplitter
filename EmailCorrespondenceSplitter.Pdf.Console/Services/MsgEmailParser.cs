@@ -25,12 +25,14 @@ public class MsgEmailParser : IEmailParser
 
                     try
                     {
-                        var typeString = recipient.Type.ToString();
+                        var typeString = recipient.Type?.ToString() ?? string.Empty;
 
                         if (typeString.Contains("To", StringComparison.OrdinalIgnoreCase))
                             toRecipients.Add(recipientEmail);
                         else if (typeString.Contains("Cc", StringComparison.OrdinalIgnoreCase))
                             ccRecipients.Add(recipientEmail);
+                        else
+                            toRecipients.Add(recipientEmail);
                     }
                     catch
                     {

@@ -58,10 +58,12 @@ public class CorrespondenceDetectorTests
     [Fact]
     public async Task DetectCorrespondences_Em1_Returns2Correspondences()
     {
+        // em1.msg - Outlook with 2 correspondences
         var filePath = Path.Combine(_assetsDirectory, "em1.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em1.msg not found");
             return;
         }
 
@@ -76,10 +78,12 @@ public class CorrespondenceDetectorTests
     [Fact]
     public async Task DetectCorrespondences_Em2_Returns2Correspondences()
     {
+        // em2.msg - Outlook with 2 correspondences
         var filePath = Path.Combine(_assetsDirectory, "em2.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em2.msg not found");
             return;
         }
 
@@ -92,10 +96,12 @@ public class CorrespondenceDetectorTests
     [Fact]
     public async Task DetectCorrespondences_Em3_Returns8Correspondences()
     {
+        // em3.msg - Outlook with 8 correspondences and images
         var filePath = Path.Combine(_assetsDirectory, "em3.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em3.msg not found");
             return;
         }
 
@@ -113,28 +119,39 @@ public class CorrespondenceDetectorTests
     }
 
     [Fact]
-    public async Task DetectCorrespondences_Em4_Returns2Correspondences()
+    public async Task DetectCorrespondences_Em4_Returns24Correspondences()
     {
+        // em4.msg - Outlook with 24 forwarded correspondences
         var filePath = Path.Combine(_assetsDirectory, "em4.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em4.msg not found");
             return;
         }
 
         var email = await _parser.ParseAsync(filePath);
         var result = _detector.DetectCorrespondences(email);
 
-        Assert.Equal(2, result.Count);
+        Assert.Equal(24, result.Count);
+        Assert.True(result[0].IsParent);
+        
+        // Verify all others are not parent
+        for (int i = 1; i < result.Count; i++)
+        {
+            Assert.False(result[i].IsParent);
+        }
     }
 
     [Fact]
     public async Task DetectCorrespondences_Em5_AppleMail_Returns2Correspondences()
     {
+        // em5.msg - Apple with 2 correspondences
         var filePath = Path.Combine(_assetsDirectory, "em5.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em5.msg not found");
             return;
         }
 
@@ -148,19 +165,21 @@ public class CorrespondenceDetectorTests
     }
 
     [Fact]
-    public async Task DetectCorrespondences_Em6_Returns3Correspondences()
+    public async Task DetectCorrespondences_Em6_Returns4Correspondences()
     {
+        // em6.msg - Outlook with 4 correspondences
         var filePath = Path.Combine(_assetsDirectory, "em6.msg");
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em6.msg not found");
             return;
         }
 
         var email = await _parser.ParseAsync(filePath);
         var result = _detector.DetectCorrespondences(email);
 
-        Assert.Equal(3, result.Count);
+        Assert.Equal(4, result.Count);
     }
 
     [Fact]
@@ -170,6 +189,7 @@ public class CorrespondenceDetectorTests
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em1.msg not found");
             return;
         }
 
@@ -195,6 +215,7 @@ public class CorrespondenceDetectorTests
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em3.msg not found");
             return;
         }
 

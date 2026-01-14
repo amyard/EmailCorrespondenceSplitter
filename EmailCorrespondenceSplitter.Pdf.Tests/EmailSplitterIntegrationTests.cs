@@ -39,6 +39,7 @@ public class EmailSplitterIntegrationTests : IDisposable
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em1.msg not found");
             return;
         }
 
@@ -61,6 +62,7 @@ public class EmailSplitterIntegrationTests : IDisposable
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em3.msg not found");
             return;
         }
 
@@ -77,16 +79,64 @@ public class EmailSplitterIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task ProcessEmailAsync_Em4_Creates24Correspondences()
+    {
+        var filePath = Path.Combine(_assetsDirectory, "em4.msg");
+        
+        if (!File.Exists(filePath))
+        {
+            Assert.Fail("Test file em4.msg not found");
+            return;
+        }
+
+        await _splitter.ProcessEmailAsync(filePath);
+
+        var outputFolders = Directory.GetDirectories(_testOutputDirectory);
+        Assert.Single(outputFolders);
+
+        var msgFiles = Directory.GetFiles(outputFolders[0], "*.msg");
+        // 1 parent copy + 24 correspondences = 25 files
+        Assert.Equal(25, msgFiles.Length);
+        Assert.Single(msgFiles.Where(f => f.Contains("00_parent_")));
+        Assert.Equal(24, msgFiles.Count(f => f.Contains("_correspondence_")));
+    }
+
+    [Fact]
+    public async Task ProcessEmailAsync_Em6_Creates4Correspondences()
+    {
+        var filePath = Path.Combine(_assetsDirectory, "em6.msg");
+        
+        if (!File.Exists(filePath))
+        {
+            Assert.Fail("Test file em6.msg not found");
+            return;
+        }
+
+        await _splitter.ProcessEmailAsync(filePath);
+
+        var outputFolders = Directory.GetDirectories(_testOutputDirectory);
+        Assert.Single(outputFolders);
+
+        var msgFiles = Directory.GetFiles(outputFolders[0], "*.msg");
+        // 1 parent copy + 4 correspondences = 5 files
+        Assert.Equal(5, msgFiles.Length);
+        Assert.Single(msgFiles.Where(f => f.Contains("00_parent_")));
+        Assert.Equal(4, msgFiles.Count(f => f.Contains("_correspondence_")));
+    }
+
+    [Fact]
     public async Task ProcessDirectoryAsync_ProcessesAllMsgFiles()
     {
         if (!Directory.Exists(_assetsDirectory))
         {
+            Assert.Fail("Assets directory not found");
             return;
         }
 
         var msgFileCount = Directory.GetFiles(_assetsDirectory, "*.msg").Length;
         if (msgFileCount == 0)
         {
+            Assert.Fail("No MSG files found in Assets directory");
             return;
         }
 
@@ -103,6 +153,7 @@ public class EmailSplitterIntegrationTests : IDisposable
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em1.msg not found");
             return;
         }
 
@@ -120,6 +171,7 @@ public class EmailSplitterIntegrationTests : IDisposable
         
         if (!File.Exists(filePath))
         {
+            Assert.Fail("Test file em3.msg not found");
             return;
         }
 

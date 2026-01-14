@@ -124,119 +124,186 @@ public class CorrespondenceDetector
         var doc = new HtmlDocument();
         doc.LoadHtml(email.HtmlBody);
 
-        // Check for divRplyFwdMsg (OWA format)
-        var divRplyFwdMsgs = doc.DocumentNode.SelectNodes("//div[@id='divRplyFwdMsg']");
-        if (divRplyFwdMsgs != null && divRplyFwdMsgs.Count > 0)
-        {
-            return ExtractWithDivMarkers(email, doc, divRplyFwdMsgs);
-        }
+        // Collect ALL separators: HR tags and border-top divs, in document order
+        var allSeparators = new List<(HtmlNode Node, int Position, string Type)>();
 
-        // Check for HR separators (filter out nested ones)
+        // Find all HR tags
         var allHrs = doc.DocumentNode.SelectNodes("//hr");
-        List<HtmlNode>? separators = null;
-
         if (allHrs != null)
         {
-            separators = [];
             foreach (var hr in allHrs)
             {
-                var parent = hr.ParentNode;
-                bool isNestedInQuote = false;
+                var position = email.HtmlBody.IndexOf(hr.OuterHtml);
+                allSeparators.Add((hr, position, "hr"));
+            }
+        }
 
-                while (parent != null)
+        // Find all border-top divs
+        var borderTopDivs = doc.DocumentNode.SelectNodes("//div[contains(@style, 'border-top')]");
+        if (borderTopDivs != null)
+        {
+            foreach (var div in borderTopDivs)
+            {
+                var style = div.GetAttributeValue("style", "");
+                if (style.Contains("border:none", StringComparison.OrdinalIgnoreCase) &&
+                    style.Contains("border-top", StringComparison.OrdinalIgnoreCase))
                 {
-                    var parentId = parent.GetAttributeValue("id", "");
-                    var parentClass = parent.GetAttributeValue("class", "");
-
-                    if (parentId == "divRplyFwdMsg" ||
-                        parentId == "mail-editor-reference-message-container" ||
-                        parentClass.Contains("gmail_quote") ||
-                        parent.Name == "blockquote")
-                    {
-                        isNestedInQuote = true;
-                        break;
-                    }
-                    parent = parent.ParentNode;
-                }
-
-                if (!isNestedInQuote)
-                {
-                    separators.Add(hr);
+                    // Get approximate position using a unique part of the style
+                    var position = email.HtmlBody.IndexOf(div.OuterHtml.Substring(0, Math.Min(100, div.OuterHtml.Length)));
+                    allSeparators.Add((div, position, "border-top"));
                 }
             }
         }
 
-        if (separators != null && separators.Count > 0)
-        {
-            var mainContent = ExtractAllContentBeforeSeparator(doc, separators[0]);
+        // Sort by position in document
+        allSeparators = allSeparators.OrderBy(s => s.Position).ToList();
 
-            if (!string.IsNullOrWhiteSpace(mainContent))
+        if (allSeparators.Count == 0)
+        {
+            // No separators found, try From: pattern as fallback
+            return SplitByFromPattern(email);
+        }
+
+        // Extract content before first separator (parent email)
+        var firstSeparator = allSeparators[0].Node;
+        var mainContent = ExtractAllContentBeforeSeparator(doc, firstSeparator);
+
+        if (!string.IsNullOrWhiteSpace(mainContent))
+        {
+            correspondences.Add(new Correspondence
             {
+                From = email.From,
+                To = email.To,
+                Cc = email.Cc,
+                SentOn = email.SentOn,
+                Subject = email.Subject,
+                HtmlContent = mainContent,
+                TextContent = HtmlToPlainText(mainContent),
+                Index = 0,
+                IsParent = true,
+                EmbeddedImages = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages),
+                Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
+            });
+        }
+
+        // Process each separator
+        for (int i = 0; i < allSeparators.Count; i++)
+        {
+            var (separator, _, separatorType) = allSeparators[i];
+            HtmlNode? nextSeparator = i < allSeparators.Count - 1 ? allSeparators[i + 1].Node : null;
+
+            string quotedContent;
+
+            if (separatorType == "border-top")
+            {
+                // Border-top div contains the content
+                if (nextSeparator != null && ContainsNode(separator, nextSeparator))
+                {
+                    // Next separator is inside this one - extract content before it
+                    quotedContent = ExtractContentFromSeparatorToNext(separator, nextSeparator);
+                }
+                else
+                {
+                    // Extract all content from this separator
+                    quotedContent = separator.InnerHtml;
+                }
+            }
+            else
+            {
+                // HR separator - content is after the HR
+                quotedContent = ExtractContentAfterHrToNextSeparator(separator, nextSeparator);
+            }
+
+            if (!string.IsNullOrWhiteSpace(quotedContent))
+            {
+                var metadata = ExtractEmailMetadata(quotedContent);
+
                 correspondences.Add(new Correspondence
                 {
-                    From = email.From,
-                    To = email.To,
-                    Cc = email.Cc,
-                    SentOn = email.SentOn,
-                    Subject = email.Subject,
-                    HtmlContent = mainContent,
-                    TextContent = HtmlToPlainText(mainContent),
-                    Index = 0,
-                    IsParent = true,
-                    EmbeddedImages = ExtractImagesForHtmlContent(mainContent, email.EmbeddedImages),
-                    Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    Cc = metadata.Cc ?? string.Empty,
+                    SentOn = metadata.Date,
+                    Subject = metadata.Subject ?? email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = correspondences.Count,
+                    IsParent = false,
+                    EmbeddedImages = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages)
                 });
             }
+        }
 
-            for (int i = 0; i < separators.Count; i++)
+        return correspondences;
+    }
+
+    /// <summary>
+    /// Extract content after an HR separator up to the next separator
+    /// </summary>
+    private string ExtractContentAfterHrToNextSeparator(HtmlNode hrNode, HtmlNode? nextSeparator)
+    {
+        var content = new StringBuilder();
+
+        // The HR is typically inside a div, so we need to get content after the HR's parent
+        var hrParent = hrNode.ParentNode;
+        if (hrParent == null)
+            return string.Empty;
+
+        var currentNode = hrParent.NextSibling;
+
+        while (currentNode != null)
+        {
+            // Check if we've reached the next separator
+            if (nextSeparator != null)
             {
-                HtmlNode? nextSeparator = i < separators.Count - 1 ? separators[i + 1] : null;
-                var quotedContent = ExtractContentBetweenNodes(separators[i], nextSeparator);
+                if (currentNode == nextSeparator)
+                    break;
 
-                if (!string.IsNullOrWhiteSpace(quotedContent))
+                // Check if this node contains the next separator
+                if (ContainsNode(currentNode, nextSeparator))
                 {
-                    var metadata = ExtractEmailMetadata(quotedContent);
-
-                    correspondences.Add(new Correspondence
-                    {
-                        From = metadata.From ?? "Unknown",
-                        To = metadata.To ?? email.From,
-                        Cc = metadata.Cc ?? string.Empty,
-                        SentOn = metadata.Date,
-                        Subject = metadata.Subject ?? email.Subject,
-                        HtmlContent = quotedContent,
-                        TextContent = HtmlToPlainText(quotedContent),
-                        Index = correspondences.Count,
-                        IsParent = false,
-                        EmbeddedImages = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages)
-                    });
+                    // Extract content from this node up to the separator
+                    ExtractBeforeNodeInSubtree(currentNode, nextSeparator, content);
+                    break;
                 }
             }
 
-            return correspondences;
-        }
-
-        // Check for border-top divs
-        var borderTopDivs = doc.DocumentNode.SelectNodes("//div[contains(@style, 'border-top')]");
-        if (borderTopDivs != null && borderTopDivs.Count > 0)
-        {
-            var emailSeparators = borderTopDivs
-                .Where(div =>
-                {
-                    var style = div.GetAttributeValue("style", "");
-                    return style.Contains("border:none", StringComparison.OrdinalIgnoreCase) &&
-                           style.Contains("border-top", StringComparison.OrdinalIgnoreCase);
-                })
-                .ToList();
-
-            if (emailSeparators.Count > 0)
+            // Skip whitespace-only text nodes
+            if (currentNode.NodeType == HtmlNodeType.Text &&
+                string.IsNullOrWhiteSpace(currentNode.InnerText))
             {
-                return ExtractWithBorderDivs(email, doc, emailSeparators);
+                currentNode = currentNode.NextSibling;
+                continue;
             }
+
+            // Check if this is another separator (HR or border-top div)
+            if (currentNode.Name == "hr")
+                break;
+
+            if (currentNode.Name == "div")
+            {
+                var style = currentNode.GetAttributeValue("style", "");
+                if (style.Contains("border:none", StringComparison.OrdinalIgnoreCase) &&
+                    style.Contains("border-top", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                // Check if it contains an HR
+                var innerHr = currentNode.SelectSingleNode(".//hr");
+                if (innerHr != null)
+                {
+                    // This div contains an HR - extract content before it and stop
+                    ExtractBeforeNodeInSubtree(currentNode, innerHr, content);
+                    break;
+                }
+            }
+
+            content.Append(currentNode.OuterHtml);
+            currentNode = currentNode.NextSibling;
         }
 
-        // Fallback to From: pattern
-        return SplitByFromPattern(email);
+        return content.ToString();
     }
 
     private List<Correspondence> DetectAppleCorrespondences(EmailMessage email)
