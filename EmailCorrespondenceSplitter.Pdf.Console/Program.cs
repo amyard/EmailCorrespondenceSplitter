@@ -1,13 +1,11 @@
 ﻿using System.Text;
-using EmailCorrespondenceSplitter.Pdf.Console.Models;
 using EmailCorrespondenceSplitter.Pdf.Console.Services;
-using HtmlAgilityPack;
 
 // Register code pages for proper encoding support (required for MsgReader)
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 
 Console.WriteLine("===========================================");
-Console.WriteLine("   Email Correspondence Splitter");
+Console.WriteLine("   Email Correspondence Splitter (PDF)");
 Console.WriteLine("===========================================\n");
 
 // Get the Assets directory (should be copied to output during build)
@@ -17,30 +15,31 @@ var outputDirectory = Path.Combine(AppContext.BaseDirectory, "Output");
 Console.WriteLine($"Assets directory: {assetsDirectory}");
 Console.WriteLine($"Output directory: {outputDirectory}\n");
 
-// Create and run the email splitter
-var splitter = new EmailSplitter(outputDirectory);
+// Create and run the PDF email splitter
+var splitter = new PdfEmailSplitter(outputDirectory);
 await splitter.ProcessDirectoryAsync(assetsDirectory);
 
-// Debug: Check the second correspondence for em1
-var em1OutputDir = Directory.GetDirectories(outputDirectory).OrderByDescending(d => Directory.GetCreationTime(d)).FirstOrDefault(d => d.Contains("em1"));
-if (em1OutputDir != null)
+// Summary of expected vs actual results
+Console.WriteLine("\n===========================================");
+Console.WriteLine("   Processing Summary");
+Console.WriteLine("===========================================");
+
+var expectedResults = new Dictionary<string, int>
 {
-    var correspondenceFile = Directory.GetFiles(em1OutputDir, "*02_correspondence*").FirstOrDefault();
-    if (correspondenceFile != null)
+    { "em1.msg", 2 },  // Outlook with 2 correspondences
+    { "em2.msg", 2 },  // Outlook with 2 correspondences
+    { "em3.msg", 8 },  // Outlook with 8 correspondences and images
+    { "em4.msg", 24 }, // Outlook with 24 forwarded correspondences
+    { "em5.msg", 2 },  // Apple with 2 correspondences
+    { "em6.msg", 4 },  // Outlook with 4 correspondences
+};
+
+foreach (var expected in expectedResults)
+{
+    var emailPath = Path.Combine(assetsDirectory, expected.Key);
+    if (File.Exists(emailPath))
     {
-        Console.WriteLine($"\n=== em1: Second correspondence ===");
-        using var msg = new MsgReader.Outlook.Storage.Message(correspondenceFile);
-        Console.WriteLine($"From: {msg.Sender?.DisplayName} <{msg.Sender?.Email}>");
-        Console.WriteLine($"To: {string.Join("; ", msg.Recipients?.Select(r => $"{r.DisplayName} <{r.Email}>") ?? [])}");
-        Console.WriteLine($"Subject: {msg.Subject}");
-        Console.WriteLine($"SentOn: {msg.SentOn}");
-        
-        var htmlBody = msg.BodyHtml ?? "";
-        var doc = new HtmlDocument();
-        doc.LoadHtml(htmlBody);
-        var textContent = doc.DocumentNode.InnerText.Trim();
-        
-        Console.WriteLine($"Body (first 200 chars): {textContent.Substring(0, Math.Min(200, textContent.Length))}");
+        Console.WriteLine($"  {expected.Key}: Expected {expected.Value} correspondence(s)");
     }
 }
 

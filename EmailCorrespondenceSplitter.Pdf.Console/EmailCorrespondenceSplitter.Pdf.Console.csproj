@@ -14,6 +14,8 @@
 
     <ItemGroup>
         <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
+        <PackageReference Include="itext7" Version="7.2.5" />
+        <PackageReference Include="itext7.pdfhtml" Version="4.0.5" />
         <PackageReference Include="MsgKit" Version="3.0.2" />
         <PackageReference Include="MsgReader" Version="6.0.6" />
         <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.1" />

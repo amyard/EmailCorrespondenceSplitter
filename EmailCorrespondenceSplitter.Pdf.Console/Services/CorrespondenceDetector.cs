@@ -14,29 +14,87 @@ public class CorrespondenceDetector
     // Multi-language patterns for email header fields
     private static readonly string[] FromPatterns =
     [
-        "From", "Von", "De", "Da", "??", "Od", "Från", "Fra", "???", "???", "?? ??", "???", "?????"
+        "From",      // English
+        "Von",       // German
+        "De",        // French, Spanish, Portuguese
+        "Da",        // Italian
+        "??",        // Russian
+        "Od",        // Polish, Czech
+        "Från",      // Swedish
+        "Fra",       // Norwegian, Danish
+        "???",    // Japanese
+        "????",   // Korean
+        "???",    // Chinese Simplified
+        "???",    // Chinese Traditional
+        "??????"     // Hindi
     ];
 
     private static readonly string[] SentPatterns =
     [
-        "Sent", "Gesendet", "Envoyé", "Enviado", "Inviato", "??????????", "Wys?ano", "Skickat", "Sendt", "????", "????", "?? ??", "?????", "????"
+        "Sent",       // English
+        "Gesendet",   // German
+        "Envoyé",     // French
+        "Enviado",    // Spanish, Portuguese
+        "Inviato",    // Italian
+        "??????????", // Russian
+        "Wys?ano",    // Polish
+        "Skickat",    // Swedish
+        "Sendt",      // Norwegian, Danish
+        "????",   // Japanese
+        "????",   // Korean
+        "????",   // Chinese Simplified
+        "????",   // Chinese Traditional
+        "???? ???"   // Hindi
     ];
 
     private static readonly string[] ToPatterns =
     [
-        "To", "An", "À", "A", "????", "Do", "Till", "Til", "??", "???", "?? ??", "???", "??"
+        "To",        // English
+        "An",        // German
+        "À",         // French
+        "A",         // Spanish, Portuguese, Italian
+        "????",      // Russian
+        "Do",        // Polish
+        "Till",      // Swedish
+        "Til",       // Norwegian, Danish
+        "??",      // Japanese
+        "????",   // Korean
+        "???",    // Chinese Simplified
+        "???",    // Chinese Traditional
+        "?????"      // Hindi
     ];
 
     private static readonly string[] SubjectPatterns =
     [
-        "Subject", "Betreff", "Objet", "Asunto", "Oggetto", "????", "Temat", "Ämne", "Emne", "??", "??", "??", "???????", "????"
+        "Subject",   // English
+        "Betreff",   // German
+        "Objet",     // French
+        "Asunto",    // Spanish
+        "Oggetto",   // Italian
+        "????",      // Russian
+        "Temat",     // Polish
+        "Ämne",      // Swedish
+        "Emne",      // Norwegian, Danish
+        "??",      // Japanese
+        "??",      // Korean
+        "??",      // Chinese Simplified
+        "??",      // Chinese Traditional
+        "????"      // Hindi
     ];
 
     private static readonly string[] CcPatterns =
     [
-        "Cc", "CC", "Kopie", "Copie", "Copia", "?????", "Kopia", "??", "??", "??"
+        "Cc",        // English
+        "CC",        // English uppercase
+        "Kopie",     // German
+        "Copie",     // French
+        "Copia",     // Spanish, Italian
+        "?????",     // Russian
+        "Kopia",     // Polish, Swedish
+        "??",      // Chinese Simplified
+        "??",      // Chinese Traditional, Japanese
+        "??"       // Korean
     ];
-
     public List<Correspondence> DetectCorrespondences(EmailMessage email)
     {
         if (string.IsNullOrWhiteSpace(email.HtmlBody))
