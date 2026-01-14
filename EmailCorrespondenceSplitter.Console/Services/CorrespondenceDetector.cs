@@ -292,7 +292,8 @@ public class CorrespondenceDetector
             if (emailSeparators.Count > 0)
             {
                 // For border-top divs in Outlook emails:
-                // The div contains metadata header (From, Date, To, Subject) for the QUOTED email
+                // The div contains metadata header (From: Richard Canterbury, Date: ...)
+                // for the QUOTED email
                 // This is a visual separator showing the start of the quoted/forwarded message
                 // Structure:
                 //   - Parent email body
@@ -323,10 +324,20 @@ public class CorrespondenceDetector
                 
                 // Extract the quoted email (the separator div AND everything after it)
                 // The separator div contains the metadata for the quoted email
-                var quotedContent = separator.OuterHtml + ExtractContentAfterNode(separator);
+                // We extract metadata FROM the div, but REMOVE it from the HTML content
+                // to avoid duplication (metadata is already in Correspondence properties)
+                var separatorHtml = separator.OuterHtml;
+                var contentAfterSeparator = ExtractContentAfterNode(separator);
+                
+                // Extract metadata from the separator div
+                var metadata = ExtractEmailMetadata(separatorHtml);
+                
+                // The quoted content should NOT include the separator div itself
+                // because that would duplicate the header information
+                var quotedContent = contentAfterSeparator;
+                
                 if (!string.IsNullOrWhiteSpace(quotedContent))
                 {
-                    var metadata = ExtractEmailMetadata(quotedContent);
                     correspondences.Add(new Correspondence
                     {
                         From = metadata.From ?? "Unknown",
