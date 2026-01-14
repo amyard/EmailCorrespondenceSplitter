@@ -233,13 +233,15 @@ public class CorrespondenceDetector
 
     /// <summary>
     /// Extract content for a border-top separator correspondence.
-    /// The header is inside the border-top div (which we use for metadata extraction),
-    /// but the body content follows as siblings after the div or its parent wrapper.
-    /// We skip the header div content and only include the body from siblings.
+    /// The header is inside the border-top div, and the body content follows as siblings.
+    /// We include BOTH the header from the border-top div AND the body from siblings.
     /// </summary>
     private string ExtractBorderTopCorrespondence(HtmlNode borderTopDiv, HtmlNode? nextSeparator)
     {
         var content = new StringBuilder();
+
+        // Include the header content from inside the border-top div
+        content.Append(borderTopDiv.InnerHtml);
 
         // The border-top div may be wrapped in a parent div, like:
         // <div><div style="border:none;border-top:...">header</div></div>
@@ -867,7 +869,9 @@ public class CorrespondenceDetector
         DateTime? date = null;
         string? subject = null;
 
+        // Convert HTML to plain text and decode HTML entities
         var text = HtmlToPlainText(htmlContent);
+        text = System.Net.WebUtility.HtmlDecode(text);
 
         // Build multi-language regex patterns
         var fromPattern = $@"(?:{string.Join("|", FromPatterns.Select(p => Regex.Escape(p)))}):\s*(.+?)(?:\r?\n|{string.Join("|", SentPatterns.Concat(ToPatterns).Concat(SubjectPatterns).Concat(CcPatterns).Select(p => Regex.Escape(p) + ":"))}|$)";

@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using EmailCorrespondenceSplitter.Pdf.Console.Models;
 using MsgKit;
 
@@ -66,9 +67,12 @@ public class OutputManager
 
         await System.Threading.Tasks.Task.Run(() =>
         {
+            // Parse the From address to get email and display name
+            var (senderEmail, senderName) = ParseEmailAddress(correspondence.From);
+            
             using var email = new Email(
-                new Sender(correspondence.From, correspondence.From),
-                correspondence.Subject
+                new Sender(senderEmail, senderName),
+                correspondence.Subject ?? ""
             );
 
             // Add recipients
@@ -77,8 +81,8 @@ public class OutputManager
                 var recipients = correspondence.To.Split(';', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var recipient in recipients)
                 {
-                    var cleanRecipient = recipient.Trim();
-                    email.Recipients.AddTo(cleanRecipient, cleanRecipient);
+                    var (recipientEmail, recipientName) = ParseEmailAddress(recipient.Trim());
+                    email.Recipients.AddTo(recipientEmail, recipientName);
                 }
             }
 
@@ -88,8 +92,8 @@ public class OutputManager
                 var ccRecipients = correspondence.Cc.Split(';', StringSplitOptions.RemoveEmptyEntries);
                 foreach (var ccRecipient in ccRecipients)
                 {
-                    var cleanCcRecipient = ccRecipient.Trim();
-                    email.Recipients.AddCc(cleanCcRecipient, cleanCcRecipient);
+                    var (ccEmail, ccName) = ParseEmailAddress(ccRecipient.Trim());
+                    email.Recipients.AddCc(ccEmail, ccName);
                 }
             }
 
@@ -99,10 +103,18 @@ public class OutputManager
                 email.SentOn = correspondence.SentOn.Value;
             }
 
-            // Set body - keep original content as is
-            if (!string.IsNullOrWhiteSpace(correspondence.HtmlContent))
+            // Get HTML content - for non-parent correspondences, remove the header from the body
+            // since MsgKit will display it based on the email properties we set above
+            var htmlContent = correspondence.HtmlContent;
+            if (!correspondence.IsParent && !string.IsNullOrWhiteSpace(htmlContent))
             {
-                email.BodyHtml = correspondence.HtmlContent;
+                htmlContent = RemoveHeaderFromHtmlBody(htmlContent);
+            }
+
+            // Set body
+            if (!string.IsNullOrWhiteSpace(htmlContent))
+            {
+                email.BodyHtml = htmlContent;
             }
             else if (!string.IsNullOrWhiteSpace(correspondence.TextContent))
             {
@@ -172,6 +184,56 @@ public class OutputManager
         });
     }
 
+    /// <summary>
+    /// Parse an email address string into email and display name components.
+    /// Handles formats like:
+    /// - "Name <email@domain.com>" -> ("email@domain.com", "Name")
+    /// - "email@domain.com" -> ("email@domain.com", "email@domain.com")
+    /// - "<email@domain.com>" -> ("email@domain.com", "email@domain.com")
+    /// Also handles HTML entities like &lt; and &gt;
+    /// </summary>
+    private (string Email, string DisplayName) ParseEmailAddress(string address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+            return ("unknown@unknown.com", "Unknown");
+
+        address = address.Trim();
+        
+        // Decode HTML entities
+        address = System.Net.WebUtility.HtmlDecode(address);
+        
+        // Pattern: "Display Name <email@domain.com>" or just "<email@domain.com>"
+        var match = Regex.Match(address, @"^(?:(.+?)\s*)?<([^>]+)>$");
+        if (match.Success)
+        {
+            var displayName = match.Groups[1].Success && !string.IsNullOrWhiteSpace(match.Groups[1].Value) 
+                ? match.Groups[1].Value.Trim() 
+                : match.Groups[2].Value.Trim();
+            var email = match.Groups[2].Value.Trim();
+            return (email, displayName);
+        }
+        
+        // Check if it's just an email address (contains @)
+        if (address.Contains('@'))
+        {
+            return (address, address);
+        }
+        
+        // It's just a name, use a placeholder email
+        return ($"{SanitizeForEmail(address)}@unknown.com", address);
+    }
+
+    /// <summary>
+    /// Sanitize a string to be used as part of an email address
+    /// </summary>
+    private string SanitizeForEmail(string name)
+    {
+        // Replace spaces with dots, remove special characters
+        var sanitized = Regex.Replace(name.ToLowerInvariant(), @"[^a-z0-9.]", ".");
+        sanitized = Regex.Replace(sanitized, @"\.+", "."); // Remove consecutive dots
+        return sanitized.Trim('.');
+    }
+
     private string GetImageExtension(byte[] imageData)
     {
         if (imageData.Length < 4)
@@ -214,5 +276,53 @@ public class OutputManager
         }
 
         return sanitized;
+    }
+
+    /// <summary>
+    /// Remove the email header (From, Date, To, Subject block) from the HTML body.
+    /// This is used for non-parent correspondences where the header is already displayed
+    /// by Outlook based on the MSG file properties.
+    /// </summary>
+    private string RemoveHeaderFromHtmlBody(string htmlContent)
+    {
+        if (string.IsNullOrWhiteSpace(htmlContent))
+            return htmlContent;
+
+        // The header typically starts with "From:" and contains Date/Sent, To, Subject
+        // We need to find and remove this header block
+        
+        // Pattern to find the start of the header - looks for <b>From:</b> or <span>From:</span> etc.
+        var fromPattern = @"<(?:p|div)[^>]*>\s*<(?:b|strong)[^>]*>\s*(?:<span[^>]*>)?\s*From:\s*(?:</span>)?";
+        var fromMatch = Regex.Match(htmlContent, fromPattern, RegexOptions.IgnoreCase);
+        
+        if (!fromMatch.Success)
+        {
+            // Try simpler pattern
+            fromPattern = @"<(?:p|div)[^>]*>[^<]*<(?:b|strong|span)[^>]*>\s*From:";
+            fromMatch = Regex.Match(htmlContent, fromPattern, RegexOptions.IgnoreCase);
+        }
+        
+        if (fromMatch.Success)
+        {
+            var headerStart = fromMatch.Index;
+            
+            // Find where the header ends - typically after "Subject:" line
+            // The header usually ends with </p> or </div> after Subject:
+            var afterHeader = htmlContent.Substring(headerStart);
+            
+            // Look for Subject: followed by content, then the closing tag
+            var subjectPattern = @"Subject:.*?</(?:p|div)>";
+            var subjectMatch = Regex.Match(afterHeader, subjectPattern, RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            
+            if (subjectMatch.Success)
+            {
+                var headerEnd = headerStart + subjectMatch.Index + subjectMatch.Length;
+                
+                // Remove the header block
+                htmlContent = htmlContent.Substring(0, headerStart) + htmlContent.Substring(headerEnd);
+            }
+        }
+        
+        return htmlContent.TrimStart();
     }
 }
