@@ -481,6 +481,7 @@ public class CorrespondenceDetector
     {
         var correspondences = new List<Correspondence>();
 
+        // Extract content before first separator (parent email)
         var mainContent = ExtractAllContentBeforeSeparator(doc, separators[0]);
 
         correspondences.Add(new Correspondence
@@ -498,28 +499,71 @@ public class CorrespondenceDetector
             Attachments = new Dictionary<string, byte[]>(email.AttachmentData)
         });
 
-        var separatorHtml = separators[0].OuterHtml;
-        var contentAfterSeparator = ExtractContentAfterNode(separators[0]);
-        var metadata = ExtractEmailMetadata(separatorHtml);
-
-        if (!string.IsNullOrWhiteSpace(contentAfterSeparator))
+        // Process each separator div - the separator contains the metadata and the content follows inside it
+        for (int i = 0; i < separators.Count; i++)
         {
-            correspondences.Add(new Correspondence
+            var separator = separators[i];
+            HtmlNode? nextSeparator = i < separators.Count - 1 ? separators[i + 1] : null;
+
+            // The separator div itself contains the From: header and the email content
+            // We need to extract the content from inside the separator, up to the next separator
+            string quotedContent;
+            
+            if (nextSeparator != null)
             {
-                From = metadata.From ?? "Unknown",
-                To = metadata.To ?? email.From,
-                Cc = metadata.Cc ?? string.Empty,
-                SentOn = metadata.Date,
-                Subject = metadata.Subject ?? email.Subject,
-                HtmlContent = contentAfterSeparator,
-                TextContent = HtmlToPlainText(contentAfterSeparator),
-                Index = 1,
-                IsParent = false,
-                EmbeddedImages = ExtractImagesForHtmlContent(contentAfterSeparator, email.EmbeddedImages)
-            });
+                // Extract content from this separator up to (but not including) the next separator
+                quotedContent = ExtractContentFromSeparatorToNext(separator, nextSeparator);
+            }
+            else
+            {
+                // Last separator - extract all content from it
+                quotedContent = separator.InnerHtml;
+            }
+
+            // Extract metadata from the separator's content
+            var metadata = ExtractEmailMetadata(quotedContent);
+
+            if (!string.IsNullOrWhiteSpace(quotedContent))
+            {
+                correspondences.Add(new Correspondence
+                {
+                    From = metadata.From ?? "Unknown",
+                    To = metadata.To ?? email.From,
+                    Cc = metadata.Cc ?? string.Empty,
+                    SentOn = metadata.Date,
+                    Subject = metadata.Subject ?? email.Subject,
+                    HtmlContent = quotedContent,
+                    TextContent = HtmlToPlainText(quotedContent),
+                    Index = correspondences.Count,
+                    IsParent = false,
+                    EmbeddedImages = ExtractImagesForHtmlContent(quotedContent, email.EmbeddedImages)
+                });
+            }
         }
 
         return correspondences;
+    }
+
+    /// <summary>
+    /// Extract content from a separator div up to (but not including) the next separator
+    /// </summary>
+    private string ExtractContentFromSeparatorToNext(HtmlNode startSeparator, HtmlNode endSeparator)
+    {
+        var content = new StringBuilder();
+        
+        // Check if endSeparator is nested inside startSeparator's content
+        if (ContainsNode(startSeparator, endSeparator))
+        {
+            // The next separator is inside this separator - extract content before it
+            ExtractBeforeNodeInSubtree(startSeparator, endSeparator, content);
+        }
+        else
+        {
+            // The separators are at different levels - include all of startSeparator's content
+            content.Append(startSeparator.InnerHtml);
+        }
+        
+        return content.ToString();
     }
 
     private List<Correspondence> ExtractWithHrSeparators(EmailMessage email, HtmlDocument doc, HtmlNodeCollection separators)
