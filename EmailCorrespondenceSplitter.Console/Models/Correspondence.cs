@@ -16,6 +16,11 @@ public class Correspondence
     public string To { get; set; } = string.Empty;
     
     /// <summary>
+    /// Cc (Carbon Copy) addresses of this correspondence
+    /// </summary>
+    public string Cc { get; set; } = string.Empty;
+    
+    /// <summary>
     /// Date and time this correspondence was sent
     /// </summary>
     public DateTime? SentOn { get; set; }

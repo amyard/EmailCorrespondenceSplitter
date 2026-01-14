@@ -70,6 +70,17 @@ public class OutputManager
                 }
             }
             
+            // Add Cc recipients
+            if (!string.IsNullOrWhiteSpace(correspondence.Cc))
+            {
+                var ccRecipients = correspondence.Cc.Split(';', StringSplitOptions.RemoveEmptyEntries);
+                foreach (var ccRecipient in ccRecipients)
+                {
+                    var cleanCcRecipient = ccRecipient.Trim();
+                    email.Recipients.AddCc(cleanCcRecipient, cleanCcRecipient);
+                }
+            }
+            
             // Set sent date
             if (correspondence.SentOn.HasValue)
             {

@@ -198,6 +198,7 @@ public class CorrespondenceDetector
                 {
                     From = email.From,
                     To = email.To,
+                    Cc = email.Cc,
                     SentOn = email.SentOn,
                     Subject = email.Subject,
                     HtmlContent = mainContent,
@@ -256,6 +257,7 @@ public class CorrespondenceDetector
                         {
                             From = metadata.From ?? "Unknown",
                             To = metadata.To ?? email.From,
+                            Cc = metadata.Cc ?? string.Empty,
                             SentOn = metadata.Date,
                             Subject = metadata.Subject ?? email.Subject,
                             HtmlContent = quotedContent,
@@ -308,6 +310,7 @@ public class CorrespondenceDetector
                 {
                     From = email.From,
                     To = email.To,
+                    Cc = email.Cc,
                     SentOn = email.SentOn,
                     Subject = email.Subject,
                     HtmlContent = mainContent,
@@ -328,6 +331,7 @@ public class CorrespondenceDetector
                     {
                         From = metadata.From ?? "Unknown",
                         To = metadata.To ?? email.From,
+                        Cc = metadata.Cc ?? string.Empty,
                         SentOn = metadata.Date,
                         Subject = metadata.Subject ?? email.Subject,
                         HtmlContent = quotedContent,
@@ -809,6 +813,7 @@ public class CorrespondenceDetector
         {
             From = email.From,
             To = email.To,
+            Cc = email.Cc,
             SentOn = email.SentOn,
             Subject = email.Subject,
             HtmlContent = mainContent,
@@ -834,6 +839,7 @@ public class CorrespondenceDetector
                 {
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
+                    Cc = metadata.Cc ?? string.Empty,
                     SentOn = metadata.Date,
                     Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
@@ -864,6 +870,7 @@ public class CorrespondenceDetector
         {
             From = email.From,
             To = email.To,
+            Cc = email.Cc,
             SentOn = email.SentOn,
             Subject = email.Subject,
             HtmlContent = mainContent,
@@ -914,6 +921,7 @@ public class CorrespondenceDetector
         {
             From = email.From,
             To = email.To,
+            Cc = email.Cc,
             SentOn = email.SentOn,
             Subject = email.Subject,
             HtmlContent = mainContent,
@@ -939,6 +947,7 @@ public class CorrespondenceDetector
                 {
                     From = metadata.From ?? "Unknown",
                     To = metadata.To ?? email.From,
+                    Cc = metadata.Cc ?? string.Empty,
                     SentOn = metadata.Date,
                     Subject = metadata.Subject ?? email.Subject,
                     HtmlContent = quotedContent,
@@ -1163,6 +1172,7 @@ public class CorrespondenceDetector
                 {
                     From = fromAddress,
                     To = toAddress,
+                    Cc = metadata.Cc ?? string.Empty,
                     SentOn = sentDate,
                     Subject = email.Subject,
                     HtmlContent = sections[i],
@@ -1179,12 +1189,13 @@ public class CorrespondenceDetector
     }
     
     /// <summary>
-    /// Extract email metadata (From, To, Date, Subject) from HTML content
+    /// Extract email metadata (From, To, Cc, Date, Subject) from HTML content
     /// </summary>
-    private (string? From, string? To, DateTime? Date, string? Subject) ExtractEmailMetadata(string htmlContent)
+    private (string? From, string? To, string? Cc, DateTime? Date, string? Subject) ExtractEmailMetadata(string htmlContent)
     {
         string? from = null;
         string? to = null;
+        string? cc = null;
         DateTime? date = null;
         string? subject = null;
         
@@ -1209,6 +1220,15 @@ public class CorrespondenceDetector
         {
             to = toMatch.Groups[1].Value.Trim();
             to = Regex.Replace(to, @"\s+", " ");
+        }
+        
+        // Extract Cc
+        // Stop at: Subject, Sent, Date, or end of string
+        var ccMatch = Regex.Match(text, @"Cc:\s*(.+?)(?:\r?\n|Subject:|Sent:|Date:|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+        if (ccMatch.Success)
+        {
+            cc = ccMatch.Groups[1].Value.Trim();
+            cc = Regex.Replace(cc, @"\s+", " ");
         }
         
         // Extract Date/Sent - try multiple patterns
@@ -1245,7 +1265,7 @@ public class CorrespondenceDetector
             subject = Regex.Replace(subject, @"\s+", " ");
         }
         
-        return (from, to, date, subject);
+        return (from, to, cc, date, subject);
     }
     
     /// <summary>
@@ -1368,6 +1388,7 @@ public class CorrespondenceDetector
         {
             From = email.From,
             To = email.To,
+            Cc = email.Cc,
             SentOn = email.SentOn,
             Subject = email.Subject,
             HtmlContent = email.HtmlBody,
