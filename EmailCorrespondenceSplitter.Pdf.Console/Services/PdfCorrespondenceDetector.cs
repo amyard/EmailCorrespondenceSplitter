@@ -164,13 +164,13 @@ public class PdfCorrespondenceDetector
         
         var matches = Regex.Matches(htmlContent, htmlFromPattern, RegexOptions.IgnoreCase);
         
-        if (matches.Count >= expectedSections - 1)
+        if (matches.Count >= expectedSections)
         {
-            // We have enough matches to split
-            var splitPoints = new List<int> { 0 };
+            // We have enough matches to split - each section starts at a "From:" match
+            var splitPoints = new List<int>();
             
-            // Take only the first (expectedSections - 1) matches
-            for (int i = 0; i < expectedSections - 1 && i < matches.Count; i++)
+            // Take only the first expectedSections matches (one per section)
+            for (int i = 0; i < expectedSections && i < matches.Count; i++)
             {
                 splitPoints.Add(matches[i].Index);
             }
