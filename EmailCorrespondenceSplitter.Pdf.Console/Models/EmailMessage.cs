@@ -17,4 +17,9 @@ public class EmailMessage
     public List<string> Attachments { get; set; } = [];
     public Dictionary<string, byte[]> AttachmentData { get; set; } = [];
     public Dictionary<string, byte[]> EmbeddedImages { get; set; } = [];
+
+    /// <summary>
+    /// Custom data storage for parser-specific information (e.g., page ranges for PDF)
+    /// </summary>
+    public Dictionary<string, object> CustomData { get; set; } = [];
 }
