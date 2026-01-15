@@ -13,6 +13,7 @@ public class PdfEmailSplitter
     private readonly CorrespondenceDetector _msgCorrespondenceDetector;
     private readonly PdfCorrespondenceDetector _pdfCorrespondenceDetector;
     private readonly PdfOutputManager _outputManager;
+    private readonly PdfDirectCorrespondenceSplitter _pdfDirectSplitter;
 
     public PdfEmailSplitter(string outputDirectory)
     {
@@ -21,6 +22,7 @@ public class PdfEmailSplitter
         _msgCorrespondenceDetector = new CorrespondenceDetector();
         _pdfCorrespondenceDetector = new PdfCorrespondenceDetector();
         _outputManager = new PdfOutputManager(outputDirectory);
+        _pdfDirectSplitter = new PdfDirectCorrespondenceSplitter();
     }
 
     /// <summary>
@@ -89,7 +91,7 @@ public class PdfEmailSplitter
                 return 0;
             }
 
-            // Create output folder for this email
+            // Create output folder for MSG method (no suffix)
             var outputFolder = _outputManager.CreateEmailFolder(filePath);
             System.Console.WriteLine($"  Output folder: {outputFolder}");
 
@@ -97,11 +99,11 @@ public class PdfEmailSplitter
             _outputManager.CopyParentEmail(filePath, outputFolder);
             System.Console.WriteLine("  Copied parent email");
 
-            // Save each correspondence as PDF
+            // Save each correspondence as PDF (from MSG parsing)
             foreach (var correspondence in correspondences)
             {
                 await _outputManager.SaveCorrespondenceAsync(correspondence, outputFolder);
-                System.Console.WriteLine($"  Saved correspondence {correspondence.Index + 1}: {correspondence.From}");
+                System.Console.WriteLine($"  Saved correspondence {correspondence.Index + 1} (from MSG): {correspondence.From}");
             }
 
             System.Console.WriteLine($"  Successfully processed {fileName}\n");
@@ -139,20 +141,33 @@ public class PdfEmailSplitter
                 return 0;
             }
 
-            // Create output folder for this email
-            var outputFolder = _outputManager.CreateEmailFolder(filePath);
-            System.Console.WriteLine($"  Output folder: {outputFolder}");
+            // Create output folder for OLD PDF method with "_pdf" suffix
+            var outputFolderOld = _outputManager.CreateEmailFolder(filePath, "_pdf");
+            System.Console.WriteLine($"  Output folder (old method): {outputFolderOld}");
 
             // Copy the original parent PDF
-            _outputManager.CopyParentEmail(filePath, outputFolder);
+            _outputManager.CopyParentEmail(filePath, outputFolderOld);
             System.Console.WriteLine("  Copied parent PDF");
 
-            // Save each correspondence as PDF
+            // Save each correspondence as PDF with OLD solution (HTML-to-PDF conversion)
+            System.Console.WriteLine("  Saving correspondences using old solution (HTML-to-PDF)...");
             foreach (var correspondence in correspondences)
             {
-                await _outputManager.SaveCorrespondenceAsync(correspondence, outputFolder);
-                System.Console.WriteLine($"  Saved correspondence {correspondence.Index + 1}: {correspondence.From}");
+                await _outputManager.SaveCorrespondenceAsync(correspondence, outputFolderOld);
+                System.Console.WriteLine($"  Saved correspondence {correspondence.Index + 1} (old): {correspondence.From}");
             }
+
+            // Create output folder for NEW PDF method with "_pdf_new" suffix
+            var outputFolderNew = _outputManager.CreateEmailFolder(filePath, "_pdf_new");
+            System.Console.WriteLine($"  Output folder (new method): {outputFolderNew}");
+
+            // Copy the original parent PDF to new folder
+            _outputManager.CopyParentEmail(filePath, outputFolderNew);
+
+            // NEW: Split PDF directly by "From:" sections and save in separate folder
+            System.Console.WriteLine("  Extracting correspondences directly from PDF (new solution)...");
+            var directSplitCount = await _pdfDirectSplitter.SplitPdfByCorrespondencesAsync(filePath, outputFolderNew, email);
+            System.Console.WriteLine($"  Extracted {directSplitCount} correspondence(s) using direct PDF splitting");
 
             System.Console.WriteLine($"  Successfully processed {fileName}\n");
             return correspondences.Count;

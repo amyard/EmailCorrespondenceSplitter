@@ -30,10 +30,10 @@ public class PdfOutputManager
     /// <summary>
     /// Create a folder for an email based on its filename
     /// </summary>
-    public string CreateEmailFolder(string emailFilePath)
+    public string CreateEmailFolder(string emailFilePath, string suffix = "")
     {
         var emailFileName = Path.GetFileNameWithoutExtension(emailFilePath);
-        var folderName = SanitizeFileName(emailFileName);
+        var folderName = SanitizeFileName(emailFileName) + suffix;
 
         var folderPath = Path.Combine(_outputBaseFolder, folderName);
 

@@ -61,12 +61,25 @@ public class PdfCorrespondenceDetector
             return [CreateSingleCorrespondence(email)];
         }
 
+        System.Console.WriteLine($"  DEBUG OLD: Text body length: {textContent.Length} characters");
+
         // Build the split pattern for "From:" in multiple languages
         var fromPatternString = string.Join("|", FromPatterns.Select(Regex.Escape));
         var splitPattern = $@"(?=^\s*(?:{fromPatternString}):\s*.+$)";
 
         // Split the text content by "From:" lines and track positions
         var textSections = SplitWithPositions(textContent, splitPattern);
+
+        System.Console.WriteLine($"  DEBUG OLD: Found {textSections.Count} text sections:");
+        for (int i = 0; i < textSections.Count; i++)
+        {
+            var section = textSections[i];
+            System.Console.WriteLine($"  DEBUG OLD: Section {i + 1}: chars {section.StartIndex}-{section.EndIndex} (length: {section.EndIndex - section.StartIndex})");
+            
+            // Show first 100 chars
+            var preview = section.Text.Substring(0, Math.Min(100, section.Text.Length)).Replace("\r", "").Replace("\n", " ");
+            System.Console.WriteLine($"  DEBUG OLD: Preview: {preview}...");
+        }
 
         if (textSections.Count <= 1)
         {
@@ -75,6 +88,12 @@ public class PdfCorrespondenceDetector
 
         // Get page ranges if available
         var pageRanges = GetPageRanges(email);
+        
+        System.Console.WriteLine($"  DEBUG OLD: Page ranges from email: {pageRanges.Count}");
+        foreach (var pr in pageRanges)
+        {
+            System.Console.WriteLine($"  DEBUG OLD: Page {pr.PageNumber}: chars {pr.StartIndex}-{pr.EndIndex}");
+        }
         
         // Distribute images to sections based on page numbers and text positions
         var imageDistribution = DistributeImagesByPosition(email.EmbeddedImages, textSections, pageRanges);
@@ -134,6 +153,8 @@ public class PdfCorrespondenceDetector
         {
             correspondences.Add(CreateSingleCorrespondence(email));
         }
+
+        System.Console.WriteLine($"  DEBUG OLD: Created {correspondences.Count} correspondence objects");
 
         return correspondences;
     }
