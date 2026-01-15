@@ -3,23 +3,28 @@ using EmailCorrespondenceSplitter.Pdf.Console.Models;
 namespace EmailCorrespondenceSplitter.Pdf.Console.Services;
 
 /// <summary>
-/// Orchestrates the email splitting process with PDF output
+/// Orchestrates the email splitting process with PDF output.
+/// Supports both MSG and PDF input files.
 /// </summary>
 public class PdfEmailSplitter
 {
-    private readonly MsgEmailParser _parser;
-    private readonly CorrespondenceDetector _detector;
+    private readonly MsgEmailParser _msgParser;
+    private readonly PdfEmailParser _pdfParser;
+    private readonly CorrespondenceDetector _msgCorrespondenceDetector;
+    private readonly PdfCorrespondenceDetector _pdfCorrespondenceDetector;
     private readonly PdfOutputManager _outputManager;
 
     public PdfEmailSplitter(string outputDirectory)
     {
-        _parser = new MsgEmailParser();
-        _detector = new CorrespondenceDetector();
+        _msgParser = new MsgEmailParser();
+        _pdfParser = new PdfEmailParser();
+        _msgCorrespondenceDetector = new CorrespondenceDetector();
+        _pdfCorrespondenceDetector = new PdfCorrespondenceDetector();
         _outputManager = new PdfOutputManager(outputDirectory);
     }
 
     /// <summary>
-    /// Process all MSG files in the specified directory
+    /// Process all MSG and PDF files in the specified directory
     /// </summary>
     public async Task ProcessDirectoryAsync(string inputDirectory)
     {
@@ -29,19 +34,30 @@ public class PdfEmailSplitter
             return;
         }
 
+        // Get both MSG and PDF files
         var msgFiles = Directory.GetFiles(inputDirectory, "*.msg", SearchOption.TopDirectoryOnly);
+        var pdfFiles = Directory.GetFiles(inputDirectory, "*.pdf", SearchOption.TopDirectoryOnly);
 
-        if (msgFiles.Length == 0)
+        var totalFiles = msgFiles.Length + pdfFiles.Length;
+
+        if (totalFiles == 0)
         {
-            System.Console.WriteLine("No MSG files found in the Assets directory.");
+            System.Console.WriteLine("No MSG or PDF files found in the Assets directory.");
             return;
         }
 
-        System.Console.WriteLine($"Found {msgFiles.Length} MSG file(s) to process.\n");
+        System.Console.WriteLine($"Found {msgFiles.Length} MSG file(s) and {pdfFiles.Length} PDF file(s) to process.\n");
 
+        // Process MSG files
         foreach (var msgFile in msgFiles)
         {
-            await ProcessEmailAsync(msgFile);
+            await ProcessMsgEmailAsync(msgFile);
+        }
+
+        // Process PDF files
+        foreach (var pdfFile in pdfFiles)
+        {
+            await ProcessPdfEmailAsync(pdfFile);
         }
 
         System.Console.WriteLine("\nProcessing complete!");
@@ -50,21 +66,21 @@ public class PdfEmailSplitter
     /// <summary>
     /// Process a single MSG file and return the number of correspondences found
     /// </summary>
-    public async Task<int> ProcessEmailAsync(string filePath)
+    public async Task<int> ProcessMsgEmailAsync(string filePath)
     {
         var fileName = Path.GetFileName(filePath);
-        System.Console.WriteLine($"Processing: {fileName}");
+        System.Console.WriteLine($"Processing MSG: {fileName}");
 
         try
         {
             // Parse the email
-            var email = await _parser.ParseAsync(filePath);
+            var email = await _msgParser.ParseAsync(filePath);
             System.Console.WriteLine($"  Email type detected: {email.EmailType}");
             System.Console.WriteLine($"  Subject: {email.Subject}");
             System.Console.WriteLine($"  From: {email.From}");
 
-            // Detect correspondences
-            var correspondences = _detector.DetectCorrespondences(email);
+            // Detect correspondences using MSG-specific detector
+            var correspondences = _msgCorrespondenceDetector.DetectCorrespondences(email);
             System.Console.WriteLine($"  Found {correspondences.Count} correspondence(s)");
 
             if (correspondences.Count == 0)
@@ -96,5 +112,70 @@ public class PdfEmailSplitter
             System.Console.WriteLine($"  Error processing {fileName}: {ex.Message}\n");
             return 0;
         }
+    }
+
+    /// <summary>
+    /// Process a single PDF file and return the number of correspondences found
+    /// </summary>
+    public async Task<int> ProcessPdfEmailAsync(string filePath)
+    {
+        var fileName = Path.GetFileName(filePath);
+        System.Console.WriteLine($"Processing PDF: {fileName}");
+
+        try
+        {
+            // Parse the PDF email
+            var email = await _pdfParser.ParseAsync(filePath);
+            System.Console.WriteLine($"  Subject: {email.Subject}");
+            System.Console.WriteLine($"  From: {email.From}");
+
+            // Detect correspondences using PDF-specific detector (splits by "From:")
+            var correspondences = _pdfCorrespondenceDetector.DetectCorrespondences(email);
+            System.Console.WriteLine($"  Found {correspondences.Count} correspondence(s)");
+
+            if (correspondences.Count == 0)
+            {
+                System.Console.WriteLine("  No correspondences detected, skipping.");
+                return 0;
+            }
+
+            // Create output folder for this email
+            var outputFolder = _outputManager.CreateEmailFolder(filePath);
+            System.Console.WriteLine($"  Output folder: {outputFolder}");
+
+            // Copy the original parent PDF
+            _outputManager.CopyParentEmail(filePath, outputFolder);
+            System.Console.WriteLine("  Copied parent PDF");
+
+            // Save each correspondence as PDF
+            foreach (var correspondence in correspondences)
+            {
+                await _outputManager.SaveCorrespondenceAsync(correspondence, outputFolder);
+                System.Console.WriteLine($"  Saved correspondence {correspondence.Index + 1}: {correspondence.From}");
+            }
+
+            System.Console.WriteLine($"  Successfully processed {fileName}\n");
+            return correspondences.Count;
+        }
+        catch (Exception ex)
+        {
+            System.Console.WriteLine($"  Error processing {fileName}: {ex.Message}\n");
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Process a single file (auto-detect MSG or PDF)
+    /// </summary>
+    public async Task<int> ProcessEmailAsync(string filePath)
+    {
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
+
+        return extension switch
+        {
+            ".msg" => await ProcessMsgEmailAsync(filePath),
+            ".pdf" => await ProcessPdfEmailAsync(filePath),
+            _ => throw new NotSupportedException($"File type '{extension}' is not supported. Only .msg and .pdf files are supported.")
+        };
     }
 }

@@ -15,7 +15,7 @@ var outputDirectory = Path.Combine(AppContext.BaseDirectory, "Output");
 Console.WriteLine($"Assets directory: {assetsDirectory}");
 Console.WriteLine($"Output directory: {outputDirectory}\n");
 
-// Create and run the PDF email splitter
+// Create and run the PDF email splitter (supports both MSG and PDF files)
 var splitter = new PdfEmailSplitter(outputDirectory);
 await splitter.ProcessDirectoryAsync(assetsDirectory);
 
@@ -24,7 +24,8 @@ Console.WriteLine("\n===========================================");
 Console.WriteLine("   Processing Summary");
 Console.WriteLine("===========================================");
 
-var expectedResults = new Dictionary<string, int>
+// Expected results for MSG files
+var expectedMsgResults = new Dictionary<string, int>
 {
     { "em1.msg", 2 },  // Outlook with 2 correspondences
     { "em2.msg", 2 },  // Outlook with 2 correspondences
@@ -34,7 +35,28 @@ var expectedResults = new Dictionary<string, int>
     { "em6.msg", 4 },  // Outlook with 4 correspondences
 };
 
-foreach (var expected in expectedResults)
+// Expected results for PDF files
+var expectedPdfResults = new Dictionary<string, int>
+{
+    { "em1_pdf.pdf", 2 },  // Outlook with 2 correspondences
+    { "em3_pdf.pdf", 8 },  // Outlook with 8 correspondences and images
+    { "em4_pdf.pdf", 24 }, // Outlook with 24 forwarded correspondences
+    { "em5_pdf.pdf", 2 },  // Apple with 2 correspondences
+    { "em6_pdf.pdf", 4 },  // Outlook with 4 correspondences
+};
+
+Console.WriteLine("\nMSG Files:");
+foreach (var expected in expectedMsgResults)
+{
+    var emailPath = Path.Combine(assetsDirectory, expected.Key);
+    if (File.Exists(emailPath))
+    {
+        Console.WriteLine($"  {expected.Key}: Expected {expected.Value} correspondence(s)");
+    }
+}
+
+Console.WriteLine("\nPDF Files:");
+foreach (var expected in expectedPdfResults)
 {
     var emailPath = Path.Combine(assetsDirectory, expected.Key);
     if (File.Exists(emailPath))
