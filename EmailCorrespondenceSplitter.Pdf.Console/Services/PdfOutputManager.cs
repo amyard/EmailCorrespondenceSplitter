@@ -163,6 +163,8 @@ public class PdfOutputManager
             .email-header {
                 padding: 0;
                 margin-bottom: 20px;
+                border-bottom: 1px solid #cccccc;
+                padding-bottom: 10px;
             }
             .email-header p {
                 margin: 3px 0;
@@ -181,6 +183,90 @@ public class PdfOutputManager
             }
             p {
                 margin: 0 0 10px 0;
+            }
+            strong, b {
+                font-weight: bold;
+            }
+            em, i {
+                font-style: italic;
+            }
+            .embedded-images {
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 1px solid #eeeeee;
+            }
+            /* Header styles */
+            h1 {
+                font-size: 24pt;
+                font-weight: bold;
+                margin: 20px 0 10px 0;
+                color: #000000;
+            }
+            h2 {
+                font-size: 20pt;
+                font-weight: bold;
+                margin: 18px 0 9px 0;
+                color: #000000;
+            }
+            h3 {
+                font-size: 16pt;
+                font-weight: bold;
+                margin: 16px 0 8px 0;
+                color: #000000;
+            }
+            h4 {
+                font-size: 14pt;
+                font-weight: bold;
+                margin: 14px 0 7px 0;
+                color: #000000;
+            }
+            h5 {
+                font-size: 12pt;
+                font-weight: bold;
+                margin: 12px 0 6px 0;
+                color: #000000;
+            }
+            h6 {
+                font-size: 11pt;
+                font-weight: bold;
+                margin: 10px 0 5px 0;
+                color: #000000;
+            }
+            /* List styles */
+            ul, ol {
+                margin: 10px 0;
+                padding-left: 30px;
+            }
+            ul {
+                list-style-type: disc;
+            }
+            ol {
+                list-style-type: decimal;
+            }
+            li {
+                margin: 5px 0;
+                line-height: 1.4;
+            }
+            ul ul, ol ol, ul ol, ol ul {
+                margin: 5px 0;
+            }
+            /* Blockquote for quoted content */
+            blockquote {
+                margin: 10px 0 10px 20px;
+                padding-left: 15px;
+                border-left: 3px solid #cccccc;
+                color: #555555;
+            }
+            /* Pre-formatted text */
+            pre, code {
+                font-family: 'Courier New', Courier, monospace;
+                background-color: #f5f5f5;
+                padding: 2px 5px;
+            }
+            pre {
+                padding: 10px;
+                margin: 10px 0;
+                overflow-x: auto;
             }
         ");
         sb.AppendLine("</style>");

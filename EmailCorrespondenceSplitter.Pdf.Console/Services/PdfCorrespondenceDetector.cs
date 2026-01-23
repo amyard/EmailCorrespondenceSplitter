@@ -79,8 +79,15 @@ public class PdfCorrespondenceDetector
         // Distribute images to sections based on page numbers and text positions
         var imageDistribution = DistributeImagesByPosition(email.EmbeddedImages, textSections, pageRanges);
 
-        // Split HTML content if available
+        // Split HTML content if available - try to preserve styled content
         var htmlSections = SplitHtmlContent(htmlContent, textSections.Count);
+        
+        // If HTML splitting failed, try to extract HTML sections based on text positions
+        bool htmlSplitSucceeded = htmlSections.Any(h => !string.IsNullOrWhiteSpace(h));
+        if (!htmlSplitSucceeded && !string.IsNullOrWhiteSpace(htmlContent))
+        {
+            htmlSections = ExtractHtmlSectionsByTextPosition(htmlContent, textContent, textSections);
+        }
 
         for (int i = 0; i < textSections.Count; i++)
         {
@@ -97,7 +104,7 @@ public class PdfCorrespondenceDetector
                 ? imageDistribution[i] 
                 : new Dictionary<string, byte[]>();
             
-            // Build HTML content - use styled HTML section if available, otherwise convert text
+            // Build HTML content - use styled HTML section if available, otherwise convert text with styling
             string sectionHtml;
             if (i < htmlSections.Count && !string.IsNullOrWhiteSpace(htmlSections[i]))
             {
@@ -110,8 +117,8 @@ public class PdfCorrespondenceDetector
             }
             else
             {
-                // Fallback to converting text to HTML with images
-                sectionHtml = ConvertTextToHtmlWithImages(sectionText, correspondenceImages);
+                // Fallback to converting text to styled HTML with images
+                sectionHtml = ConvertTextToStyledHtml(sectionText, correspondenceImages, htmlContent);
             }
 
             correspondences.Add(new Correspondence
@@ -139,6 +146,60 @@ public class PdfCorrespondenceDetector
     }
 
     /// <summary>
+    /// Extract HTML sections by matching text positions to HTML content
+    /// This is used when direct HTML splitting fails
+    /// </summary>
+    private List<string> ExtractHtmlSectionsByTextPosition(
+        string htmlContent, 
+        string textContent,
+        List<(string Text, int StartIndex, int EndIndex)> textSections)
+    {
+        var htmlSections = new List<string>();
+        
+        // Build a mapping between plain text and HTML
+        // Extract plain text from HTML for comparison
+        var plainFromHtml = Regex.Replace(htmlContent, @"<[^>]+>", "");
+        plainFromHtml = System.Net.WebUtility.HtmlDecode(plainFromHtml);
+        
+        // For each text section, find the corresponding first line in the HTML
+        var fromPatternString = string.Join("|", FromPatterns.Select(Regex.Escape));
+        
+        foreach (var section in textSections)
+        {
+            // Find the "From:" line in this section
+            var fromMatch = Regex.Match(section.Text, $@"^\s*({fromPatternString}):\s*(.+?)$", 
+                RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            
+            if (fromMatch.Success)
+            {
+                var searchText = fromMatch.Groups[1].Value + ":";
+                var fromValue = fromMatch.Groups[2].Value.Trim();
+                
+                // Find this in the HTML - look for the pattern with possible tags
+                var htmlSearchPattern = $@"(?:<[^>]+>)*\s*{Regex.Escape(searchText)}\s*(?:<[^>]+>)*\s*{Regex.Escape(fromValue.Substring(0, Math.Min(20, fromValue.Length)))}";
+                
+                var htmlMatch = Regex.Match(htmlContent, htmlSearchPattern, RegexOptions.IgnoreCase);
+                if (htmlMatch.Success)
+                {
+                    // Found it - we'll use this position for splitting
+                    // But for now, just add an empty string since we can't easily extract the exact section
+                    htmlSections.Add(string.Empty);
+                }
+                else
+                {
+                    htmlSections.Add(string.Empty);
+                }
+            }
+            else
+            {
+                htmlSections.Add(string.Empty);
+            }
+        }
+        
+        return htmlSections;
+    }
+
+    /// <summary>
     /// Split HTML content into sections matching the text sections count
     /// </summary>
     private List<string> SplitHtmlContent(string htmlContent, int expectedSections)
@@ -158,21 +219,48 @@ public class PdfCorrespondenceDetector
         // Try to split HTML by finding "From:" patterns
         var fromPatternString = string.Join("|", FromPatterns.Select(Regex.Escape));
         
-        // Pattern to find paragraph containing "From:" - handles various HTML structures
-        // Look for: <p>From: or <p><strong>From: or <p><span>From: etc.
-        var htmlFromPattern = $@"<p[^>]*>(?:\s*<[^>]+>)*\s*(?:{fromPatternString}):\s*";
+        // Multiple patterns to find "From:" in various HTML structures from PDF extraction
+        // The PDF parser generates HTML with <p>, <h1-h6>, <strong>, <em>, <span>, <li> tags
+        var htmlFromPatterns = new[]
+        {
+            // Pattern 1: <p>From: or <p><strong>From: or <p><span>From: etc.
+            $@"<p[^>]*>(?:\s*<[^>]+>)*\s*(?:{fromPatternString}):\s*",
+            // Pattern 2: Header tags with From:
+            $@"<h[1-6][^>]*>(?:\s*<[^>]+>)*\s*(?:{fromPatternString}):\s*",
+            // Pattern 3: Just the From: with optional styling tags (for simpler structures)
+            $@"(?:<strong>|<b>|<span[^>]*>)*\s*(?:{fromPatternString}):\s*",
+            // Pattern 4: List item with From:
+            $@"<li[^>]*>(?:\s*<[^>]+>)*\s*(?:{fromPatternString}):\s*",
+            // Pattern 5: Any tag followed by From: pattern
+            $@"(?:<[^>]+>\s*)*(?:{fromPatternString}):\s*[^<]+",
+        };
         
-        var matches = Regex.Matches(htmlContent, htmlFromPattern, RegexOptions.IgnoreCase);
+        MatchCollection? bestMatches = null;
         
-        if (matches.Count >= expectedSections)
+        foreach (var pattern in htmlFromPatterns)
+        {
+            var matches = Regex.Matches(htmlContent, pattern, RegexOptions.IgnoreCase);
+            if (matches.Count >= expectedSections)
+            {
+                bestMatches = matches;
+                break;
+            }
+            // Keep the best partial match
+            if (bestMatches == null || matches.Count > bestMatches.Count)
+            {
+                bestMatches = matches;
+            }
+        }
+        
+        if (bestMatches != null && bestMatches.Count >= expectedSections)
         {
             // We have enough matches to split - each section starts at a "From:" match
             var splitPoints = new List<int>();
             
             // Take only the first expectedSections matches (one per section)
-            for (int i = 0; i < expectedSections && i < matches.Count; i++)
+            for (int i = 0; i < expectedSections && i < bestMatches.Count; i++)
             {
-                splitPoints.Add(matches[i].Index);
+                splitPoints.Add(bestMatches[i].Index);
             }
             
             for (int i = 0; i < splitPoints.Count; i++)
@@ -357,28 +445,75 @@ public class PdfCorrespondenceDetector
     /// </summary>
     private string ConvertTextToHtmlWithImages(string text, Dictionary<string, byte[]> images)
     {
+        return ConvertTextToStyledHtml(text, images, null);
+    }
+
+    /// <summary>
+    /// Convert plain text to styled HTML with embedded images
+    /// Preserves styling from the original HTML where it exists
+    /// </summary>
+    private string ConvertTextToStyledHtml(string text, Dictionary<string, byte[]> images, string? originalHtml)
+    {
         if (string.IsNullOrWhiteSpace(text))
             return "<p>No content</p>";
 
+        // If we have original HTML, try to extract styled segments
+        var styledSegments = new Dictionary<string, StyledSegment>();
+        if (!string.IsNullOrWhiteSpace(originalHtml))
+        {
+            styledSegments = ExtractStyledSegments(originalHtml);
+        }
+
         var sb = new StringBuilder();
         
-        // Escape HTML special characters
-        var html = System.Net.WebUtility.HtmlEncode(text);
+        // Convert line breaks to consistent format
+        text = text.Replace("\r\n", "\n").Replace("\r", "\n");
         
-        // Convert line breaks to HTML
-        html = html.Replace("\r\n", "\n").Replace("\r", "\n");
+        // Split into lines for processing
+        var lines = text.Split('\n');
         
-        // Split into paragraphs (double newlines)
-        var paragraphs = Regex.Split(html, @"\n\s*\n");
+        bool inParagraph = false;
+        bool lastLineWasEmpty = false;
         
-        foreach (var para in paragraphs)
+        foreach (var line in lines)
         {
-            if (!string.IsNullOrWhiteSpace(para))
+            var trimmedLine = line.Trim();
+            
+            if (string.IsNullOrWhiteSpace(trimmedLine))
             {
-                // Replace single newlines with <br/>
-                var content = para.Trim().Replace("\n", "<br/>");
-                sb.AppendLine($"<p>{content}</p>");
+                if (inParagraph)
+                {
+                    sb.AppendLine("</p>");
+                    inParagraph = false;
+                }
+                lastLineWasEmpty = true;
+                continue;
             }
+            
+            // Check if this line has styling in the original HTML
+            var styledLine = ApplyOriginalStyling(trimmedLine, styledSegments);
+            
+            if (lastLineWasEmpty || !inParagraph)
+            {
+                if (inParagraph)
+                {
+                    sb.AppendLine("</p>");
+                }
+                sb.Append("<p>");
+                inParagraph = true;
+            }
+            else
+            {
+                sb.Append("<br/>");
+            }
+            
+            sb.Append(styledLine);
+            lastLineWasEmpty = false;
+        }
+        
+        if (inParagraph)
+        {
+            sb.AppendLine("</p>");
         }
 
         // Add images at the end of the content
@@ -395,6 +530,179 @@ public class PdfCorrespondenceDetector
         }
 
         return sb.Length > 0 ? sb.ToString() : "<p>No content</p>";
+    }
+
+    /// <summary>
+    /// Extract styled segments from original HTML
+    /// </summary>
+    private Dictionary<string, StyledSegment> ExtractStyledSegments(string html)
+    {
+        var segments = new Dictionary<string, StyledSegment>(StringComparer.OrdinalIgnoreCase);
+        
+        // Extract text with <strong> or <b> tags
+        var boldPattern = @"<(?:strong|b)(?:\s[^>]*)?>([^<]+)</(?:strong|b)>";
+        foreach (Match match in Regex.Matches(html, boldPattern, RegexOptions.IgnoreCase))
+        {
+            var text = System.Net.WebUtility.HtmlDecode(match.Groups[1].Value.Trim());
+            if (!string.IsNullOrWhiteSpace(text) && !segments.ContainsKey(text))
+            {
+                segments[text] = new StyledSegment { Text = text, IsBold = true };
+            }
+        }
+        
+        // Extract text with <em> or <i> tags
+        var italicPattern = @"<(?:em|i)(?:\s[^>]*)?>([^<]+)</(?:em|i)>";
+        foreach (Match match in Regex.Matches(html, italicPattern, RegexOptions.IgnoreCase))
+        {
+            var text = System.Net.WebUtility.HtmlDecode(match.Groups[1].Value.Trim());
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                if (segments.TryGetValue(text, out var existing))
+                {
+                    existing.IsItalic = true;
+                }
+                else
+                {
+                    segments[text] = new StyledSegment { Text = text, IsItalic = true };
+                }
+            }
+        }
+        
+        // Extract text with inline styles (span with style attribute)
+        var stylePattern = @"<span\s+style=""([^""]+)"">([^<]+)</span>";
+        foreach (Match match in Regex.Matches(html, stylePattern, RegexOptions.IgnoreCase))
+        {
+            var style = match.Groups[1].Value;
+            var text = System.Net.WebUtility.HtmlDecode(match.Groups[2].Value.Trim());
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                if (segments.TryGetValue(text, out var existing))
+                {
+                    existing.InlineStyle = style;
+                }
+                else
+                {
+                    segments[text] = new StyledSegment { Text = text, InlineStyle = style };
+                }
+            }
+        }
+        
+        // Extract header content (h1-h6)
+        var headerPattern = @"<(h[1-6])(?:\s[^>]*)?>([^<]+)</\1>";
+        foreach (Match match in Regex.Matches(html, headerPattern, RegexOptions.IgnoreCase))
+        {
+            var headerTag = match.Groups[1].Value.ToLower();
+            var text = System.Net.WebUtility.HtmlDecode(match.Groups[2].Value.Trim());
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                if (segments.TryGetValue(text, out var existing))
+                {
+                    existing.HeaderLevel = headerTag;
+                }
+                else
+                {
+                    segments[text] = new StyledSegment { Text = text, HeaderLevel = headerTag };
+                }
+            }
+        }
+        
+        // Extract list item content
+        var listItemPattern = @"<li(?:\s[^>]*)?>([^<]+)</li>";
+        foreach (Match match in Regex.Matches(html, listItemPattern, RegexOptions.IgnoreCase))
+        {
+            var text = System.Net.WebUtility.HtmlDecode(match.Groups[1].Value.Trim());
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                if (segments.TryGetValue(text, out var existing))
+                {
+                    existing.IsListItem = true;
+                }
+                else
+                {
+                    segments[text] = new StyledSegment { Text = text, IsListItem = true };
+                }
+            }
+        }
+        
+        return segments;
+    }
+
+    /// <summary>
+    /// Apply original styling to a line of text
+    /// </summary>
+    private string ApplyOriginalStyling(string line, Dictionary<string, StyledSegment> styledSegments)
+    {
+        // First, escape the line for HTML
+        var escapedLine = System.Net.WebUtility.HtmlEncode(line);
+        
+        if (styledSegments.Count == 0)
+        {
+            return escapedLine;
+        }
+        
+        // Check if the entire line matches a styled segment
+        if (styledSegments.TryGetValue(line, out var lineStyle))
+        {
+            return ApplyStyle(escapedLine, lineStyle);
+        }
+        
+        // Check for partial matches within the line
+        var result = escapedLine;
+        foreach (var segment in styledSegments)
+        {
+            if (line.Contains(segment.Key, StringComparison.OrdinalIgnoreCase))
+            {
+                var escapedSegment = System.Net.WebUtility.HtmlEncode(segment.Key);
+                var styledSegment = ApplyStyle(escapedSegment, segment.Value);
+                
+                // Replace in result (case-insensitive)
+                var pattern = Regex.Escape(escapedSegment);
+                result = Regex.Replace(result, pattern, styledSegment, RegexOptions.IgnoreCase);
+            }
+        }
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Apply style to text based on StyledSegment properties
+    /// </summary>
+    private string ApplyStyle(string text, StyledSegment style)
+    {
+        var result = text;
+        
+        // Apply bold
+        if (style.IsBold)
+        {
+            result = $"<strong>{result}</strong>";
+        }
+        
+        // Apply italic
+        if (style.IsItalic)
+        {
+            result = $"<em>{result}</em>";
+        }
+        
+        // Apply inline style
+        if (!string.IsNullOrEmpty(style.InlineStyle))
+        {
+            result = $"<span style=\"{style.InlineStyle}\">{result}</span>";
+        }
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Represents a styled segment of text from the original HTML
+    /// </summary>
+    private class StyledSegment
+    {
+        public string Text { get; set; } = "";
+        public bool IsBold { get; set; }
+        public bool IsItalic { get; set; }
+        public string? InlineStyle { get; set; }
+        public string? HeaderLevel { get; set; }
+        public bool IsListItem { get; set; }
     }
 
     /// <summary>

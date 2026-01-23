@@ -231,6 +231,15 @@ public class PdfEmailParser : IEmailParser
         private readonly List<TextChunk> _chunks = [];
         private const float LINE_THRESHOLD = 5f;
         private const float SPACE_THRESHOLD = 3f;
+        private const float PARAGRAPH_THRESHOLD = 15f;
+        private const float LIST_INDENT_THRESHOLD = 20f;
+        
+        // Common bullet point characters
+        private static readonly char[] BulletChars = ['•', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '?', '-', '–', '—', '*'];
+        
+        // Base font size for determining header levels
+        private float _baseFontSize = 11f;
+        private float _maxFontSize = 11f;
 
         public void EventOccurred(IEventData data, EventType type)
         {
@@ -251,10 +260,16 @@ public class PdfEmailParser : IEmailParser
                 float y = startPoint.Get(1);
                 float fontSize = renderInfo.GetFontSize();
                 
+                // Track font sizes to determine base and header sizes
+                if (fontSize > _maxFontSize) _maxFontSize = fontSize;
+                
                 // Detect font style
                 var font = renderInfo.GetFont();
                 bool isBold = IsBoldFont(font);
                 bool isItalic = IsItalicFont(font);
+                
+                // Get font family
+                string fontFamily = GetFontFamily(font);
                 
                 // Get color
                 string colorHex = "#000000";
@@ -265,6 +280,11 @@ public class PdfEmailParser : IEmailParser
                 }
                 catch { }
                 
+                // Detect if this might be a list item
+                bool isBullet = text.Length <= 2 && text.Trim().Length == 1 && 
+                               BulletChars.Contains(text.Trim()[0]);
+                bool isNumberedItem = Regex.IsMatch(text.Trim(), @"^(\d+[\.\):]|\([a-z]\)|[a-z][\.\)])$");
+                
                 _chunks.Add(new TextChunk
                 {
                     Text = text,
@@ -273,7 +293,10 @@ public class PdfEmailParser : IEmailParser
                     FontSize = fontSize,
                     IsBold = isBold,
                     IsItalic = isItalic,
-                    ColorHex = colorHex
+                    ColorHex = colorHex,
+                    FontFamily = fontFamily,
+                    IsBullet = isBullet,
+                    IsNumberedItem = isNumberedItem
                 });
             }
             catch
@@ -289,59 +312,227 @@ public class PdfEmailParser : IEmailParser
             if (_chunks.Count == 0)
                 return string.Empty;
 
+            // Calculate base font size (most common font size)
+            _baseFontSize = CalculateBaseFontSize();
+
             var sorted = _chunks
                 .OrderByDescending(c => c.Y)
                 .ThenBy(c => c.X)
                 .ToList();
 
             var html = new StringBuilder();
-            float lastY = float.MaxValue;
-            float lastX = 0;
-            bool inParagraph = false;
-
-            foreach (var chunk in sorted)
+            var lines = GroupIntoLines(sorted);
+            
+            bool inList = false;
+            bool inOrderedList = false;
+            float lastLineY = float.MaxValue;
+            
+            foreach (var line in lines)
             {
-                bool newLine = Math.Abs(chunk.Y - lastY) > LINE_THRESHOLD;
+                if (line.Count == 0) continue;
                 
-                if (newLine)
+                var firstChunk = line[0];
+                float lineY = firstChunk.Y;
+                float lineX = firstChunk.X;
+                float lineFontSize = line.Max(c => c.FontSize);
+                bool lineIsBold = line.All(c => c.IsBold || string.IsNullOrWhiteSpace(c.Text));
+                
+                // Detect paragraph breaks (larger vertical gap)
+                bool isParagraphBreak = Math.Abs(lineY - lastLineY) > PARAGRAPH_THRESHOLD;
+                
+                // Check if this line starts a list
+                bool startsWithBullet = firstChunk.IsBullet;
+                bool startsWithNumber = firstChunk.IsNumberedItem;
+                bool isListItem = startsWithBullet || startsWithNumber;
+                bool isIndented = lineX > LIST_INDENT_THRESHOLD;
+                
+                // Close previous list if needed
+                if (inList && !isListItem && !isIndented)
                 {
-                    if (inParagraph)
-                        html.Append("</p>");
-                    html.Append("<p>");
-                    inParagraph = true;
-                    lastX = 0;
+                    html.AppendLine(inOrderedList ? "</ol>" : "</ul>");
+                    inList = false;
+                    inOrderedList = false;
                 }
-                else if (chunk.X - lastX > SPACE_THRESHOLD && lastX > 0)
+                
+                // Determine the HTML tag for this line
+                string tag = DetermineHtmlTag(lineFontSize, lineIsBold, isListItem, startsWithNumber);
+                
+                // Start a new list if needed
+                if (isListItem && !inList)
                 {
-                    html.Append(" ");
+                    inOrderedList = startsWithNumber;
+                    html.AppendLine(inOrderedList ? "<ol>" : "<ul>");
+                    inList = true;
                 }
+                
+                // Build the line content with inline styles
+                var lineContent = BuildLineContent(line, startsWithBullet || startsWithNumber);
+                
+                if (isListItem || (inList && isIndented))
+                {
+                    html.AppendLine($"<li>{lineContent}</li>");
+                }
+                else if (tag.StartsWith("h"))
+                {
+                    html.AppendLine($"<{tag}>{lineContent}</{tag}>");
+                }
+                else
+                {
+                    html.AppendLine($"<p>{lineContent}</p>");
+                }
+                
+                lastLineY = lineY;
+            }
+            
+            // Close any open list
+            if (inList)
+            {
+                html.AppendLine(inOrderedList ? "</ol>" : "</ul>");
+            }
 
+            return html.ToString();
+        }
+
+        /// <summary>
+        /// Group text chunks into lines based on Y position
+        /// </summary>
+        private List<List<TextChunk>> GroupIntoLines(List<TextChunk> sortedChunks)
+        {
+            var lines = new List<List<TextChunk>>();
+            var currentLine = new List<TextChunk>();
+            float currentY = float.MaxValue;
+            
+            foreach (var chunk in sortedChunks)
+            {
+                if (Math.Abs(chunk.Y - currentY) > LINE_THRESHOLD)
+                {
+                    if (currentLine.Count > 0)
+                    {
+                        lines.Add(currentLine.OrderBy(c => c.X).ToList());
+                    }
+                    currentLine = new List<TextChunk> { chunk };
+                    currentY = chunk.Y;
+                }
+                else
+                {
+                    currentLine.Add(chunk);
+                }
+            }
+            
+            if (currentLine.Count > 0)
+            {
+                lines.Add(currentLine.OrderBy(c => c.X).ToList());
+            }
+            
+            return lines;
+        }
+
+        /// <summary>
+        /// Calculate the most common (base) font size
+        /// </summary>
+        private float CalculateBaseFontSize()
+        {
+            if (_chunks.Count == 0) return 11f;
+            
+            var fontSizeCounts = _chunks
+                .GroupBy(c => Math.Round(c.FontSize))
+                .OrderByDescending(g => g.Count())
+                .FirstOrDefault();
+            
+            return fontSizeCounts != null ? (float)fontSizeCounts.Key : 11f;
+        }
+
+        /// <summary>
+        /// Determine the HTML tag based on font characteristics
+        /// </summary>
+        private string DetermineHtmlTag(float fontSize, bool isBold, bool isListItem, bool isNumbered)
+        {
+            if (isListItem) return "li";
+            
+            // Determine header level based on font size relative to base
+            float sizeRatio = fontSize / _baseFontSize;
+            
+            if (sizeRatio >= 2.0f && isBold) return "h1";
+            if (sizeRatio >= 1.7f && isBold) return "h2";
+            if (sizeRatio >= 1.4f && isBold) return "h3";
+            if (sizeRatio >= 1.2f && isBold) return "h4";
+            if (sizeRatio >= 1.1f && isBold) return "h5";
+            if (isBold && fontSize > _baseFontSize) return "h6";
+            
+            return "p";
+        }
+
+        /// <summary>
+        /// Build HTML content for a line with inline styles
+        /// </summary>
+        private string BuildLineContent(List<TextChunk> lineChunks, bool skipFirstChunk)
+        {
+            var content = new StringBuilder();
+            float lastX = 0;
+            bool isFirst = true;
+            
+            foreach (var chunk in lineChunks)
+            {
+                // Skip bullet/number markers
+                if (isFirst && skipFirstChunk && (chunk.IsBullet || chunk.IsNumberedItem))
+                {
+                    lastX = chunk.X + (chunk.Text.Length * chunk.FontSize * 0.5f);
+                    isFirst = false;
+                    continue;
+                }
+                
+                // Add space between chunks if needed
+                if (!isFirst && chunk.X - lastX > SPACE_THRESHOLD)
+                {
+                    content.Append(" ");
+                }
+                
                 var escapedText = System.Net.WebUtility.HtmlEncode(chunk.Text);
                 
-                // Apply styles
+                // Build inline styles
                 var styles = new List<string>();
-                if (chunk.FontSize > 14)
+                
+                // Font size (only if significantly different from base)
+                if (Math.Abs(chunk.FontSize - _baseFontSize) > 1)
+                {
                     styles.Add($"font-size:{chunk.FontSize:F0}pt");
-                if (chunk.ColorHex != "#000000")
+                }
+                
+                // Color (only if not black)
+                if (chunk.ColorHex != "#000000" && chunk.ColorHex != "#000")
+                {
                     styles.Add($"color:{chunk.ColorHex}");
-
+                }
+                
+                // Font family (only if special)
+                if (!string.IsNullOrEmpty(chunk.FontFamily) && 
+                    !chunk.FontFamily.Contains("Arial", StringComparison.OrdinalIgnoreCase) &&
+                    !chunk.FontFamily.Contains("Helvetica", StringComparison.OrdinalIgnoreCase) &&
+                    !chunk.FontFamily.Contains("Times", StringComparison.OrdinalIgnoreCase))
+                {
+                    styles.Add($"font-family:{chunk.FontFamily}");
+                }
+                
+                // Apply bold/italic tags
                 string styledText = escapedText;
                 if (chunk.IsBold) styledText = $"<strong>{styledText}</strong>";
                 if (chunk.IsItalic) styledText = $"<em>{styledText}</em>";
-
+                
+                // Wrap with span if there are inline styles
                 if (styles.Count > 0)
-                    html.Append($"<span style=\"{string.Join(";", styles)}\">{styledText}</span>");
+                {
+                    content.Append($"<span style=\"{string.Join(";", styles)}\">{styledText}</span>");
+                }
                 else
-                    html.Append(styledText);
-
-                lastY = chunk.Y;
+                {
+                    content.Append(styledText);
+                }
+                
                 lastX = chunk.X + (chunk.Text.Length * chunk.FontSize * 0.5f);
+                isFirst = false;
             }
-
-            if (inParagraph)
-                html.Append("</p>");
-
-            return html.ToString();
+            
+            return content.ToString();
         }
 
         public string GetPlainText()
@@ -386,7 +577,9 @@ public class PdfEmailParser : IEmailParser
                 var fontName = font?.GetFontProgram()?.GetFontNames()?.GetFontName() ?? "";
                 return fontName.Contains("Bold", StringComparison.OrdinalIgnoreCase) ||
                        fontName.Contains("Black", StringComparison.OrdinalIgnoreCase) ||
-                       fontName.Contains("Heavy", StringComparison.OrdinalIgnoreCase);
+                       fontName.Contains("Heavy", StringComparison.OrdinalIgnoreCase) ||
+                       fontName.Contains("Semibold", StringComparison.OrdinalIgnoreCase) ||
+                       fontName.Contains("Demi", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
         }
@@ -397,9 +590,22 @@ public class PdfEmailParser : IEmailParser
             {
                 var fontName = font?.GetFontProgram()?.GetFontNames()?.GetFontName() ?? "";
                 return fontName.Contains("Italic", StringComparison.OrdinalIgnoreCase) ||
-                       fontName.Contains("Oblique", StringComparison.OrdinalIgnoreCase);
+                       fontName.Contains("Oblique", StringComparison.OrdinalIgnoreCase) ||
+                       fontName.Contains("Inclined", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
+        }
+
+        private static string GetFontFamily(PdfFont? font)
+        {
+            try
+            {
+                var fontName = font?.GetFontProgram()?.GetFontNames()?.GetFontName() ?? "";
+                // Extract base font family name (remove style suffixes)
+                fontName = Regex.Replace(fontName, @"[-,](Bold|Italic|Regular|Medium|Light|Thin|Black|Heavy|Oblique|Semibold|Demi).*$", "", RegexOptions.IgnoreCase);
+                return fontName.Trim();
+            }
+            catch { return ""; }
         }
 
         private static string GetColorHex(Color? color)
@@ -436,6 +642,9 @@ public class PdfEmailParser : IEmailParser
             public bool IsBold { get; set; }
             public bool IsItalic { get; set; }
             public string ColorHex { get; set; } = "#000000";
+            public string FontFamily { get; set; } = "";
+            public bool IsBullet { get; set; }
+            public bool IsNumberedItem { get; set; }
         }
     }
 
